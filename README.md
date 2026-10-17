@@ -105,6 +105,32 @@ Para usar um provedor externo compatível com a API OpenAI em vez do Ollama, def
 Nesse modo, **as perguntas e os trechos recuperados são enviados ao provedor**. O `.env` é lido
 pelo `make`; rodando os scripts direto, use `uv run --env-file .env python 05_api.py`.
 
+Para manter a API no ar entre reinícios, use uma unit `systemd --user`
+(`~/.config/systemd/user/latinoware-rag-api.service`, ajustando os caminhos):
+
+```ini
+[Unit]
+Description=Latinoware 2026 RAG - API (porta 8765)
+After=network-online.target ollama.service
+
+[Service]
+WorkingDirectory=/caminho/latinoware-2026-rag
+EnvironmentFile=-/caminho/latinoware-2026-rag/.env
+ExecStart=/caminho/latinoware-2026-rag/.venv/bin/python /caminho/latinoware-2026-rag/05_api.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
+```
+
+```bash
+systemctl --user enable --now latinoware-rag-api
+loginctl enable-linger "$USER"   # para subir no boot sem login
+```
+
+O Weaviate volta sozinho com o Docker (`restart: unless-stopped`).
+
 A API aceita até `MAX_CONCORRENCIA` gerações simultâneas (padrão 2) e responde 429 acima
 disso. Exposta na internet, ponha também um limite por IP no proxy (Cloudflare, nginx).
 
