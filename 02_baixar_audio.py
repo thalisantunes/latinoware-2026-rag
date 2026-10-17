@@ -1,0 +1,105 @@
+"""Etapa 2: encontra as gravações da Latinoware 2026 no YouTube e baixa só o áudio.
+
+As gravações são lives de dia inteiro, uma por espaço e dia, publicadas pelo canal
+Itaipu Parquetec com títulos "Latinoware 2026 - Espaço <Sala> - DD/10".
+
+Saída: data/videos.json (metadados) e data/audio/<id>.m4a.
+
+O YouTube pode pedir login ("Sign in to confirm you're not a bot") conforme o IP.
+Nesse caso, exporte um cookies.txt (formato Netscape) e rode com
+YTDLP_COOKIES=/caminho/cookies.txt. Sem cookies, o script grava só os metadados.
+"""
+
+import json
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+DATA = Path(__file__).parent / "data"
+AUDIO = DATA / "audio"
+YTDLP = [sys.executable, "-m", "yt_dlp", "--js-runtimes", "node", "--sleep-requests", "1"]
+CANAL_ID = "UCNYfFA05lPFYMdB1kUkhKcA"  # Itaipu Parquetec, que transmitiu as lives
+CANAL = f"https://www.youtube.com/channel/{CANAL_ID}"
+# a busca do YouTube varia entre chamadas; ela complementa a listagem do canal
+FONTES = [f"{CANAL}/streams", f"{CANAL}/videos", "ytsearch50:Latinoware 2026 - Espaço"] + [
+    f"ytsearch50:Latinoware 2026 Espaço {d}/10" for d in (14, 15, 16)]
+TITULO = re.compile(r"Latinoware 2026 - Espaço (?P<espaco>.+?) - (?P<dia>\d{2})/10")
+
+
+def cookies():
+    c = os.environ.get("YTDLP_COOKIES")
+    return ["--cookies", c] if c else []
+
+
+def descobrir():
+    videos = {}
+    for fonte in FONTES:
+        out = subprocess.run(YTDLP + ["--flat-playlist", "--dump-json", "--playlist-end", "200", fonte],
+                             capture_output=True, text=True).stdout
+        for linha in out.splitlines():
+            d = json.loads(linha)
+            m = TITULO.search(d.get("title", ""))
+            # só vídeos do canal oficial; a busca pode trazer reenvios de terceiros
+            if m and (fonte.startswith(CANAL) or d.get("channel_id") == CANAL_ID):
+                videos[d["id"]] = {
+                    "id": d["id"],
+                    "titulo": d["title"],
+                    "espaco": "Espaço " + m["espaco"].strip(),
+                    "data": f"2026-10-{m['dia']}",
+                    "duracao": d.get("duration"),
+                    "url": f"https://www.youtube.com/watch?v={d['id']}",
+                }
+    return sorted(videos.values(), key=lambda v: (v["data"], v["espaco"], v["id"]))
+
+
+def completar(v):
+    """Pega o início real da live (release_timestamp), usado para alinhar com a grade."""
+    r = subprocess.run(YTDLP + cookies() + ["--skip-download", "--dump-json", v["url"]],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        return r.stderr.strip().splitlines()[-1] if r.stderr else "erro"
+    d = json.loads(r.stdout)
+    v["inicio_live"] = d.get("release_timestamp")  # "timestamp" é o upload, não o início da live
+    v["capitulos"] = d.get("chapters") or []
+    return None
+
+
+def baixar(v):
+    destino = AUDIO / f"{v['id']}.m4a"
+    if destino.exists():
+        return None
+    r = subprocess.run(YTDLP + cookies() + ["-x", "--audio-format", "m4a", "-f", "bestaudio",
+                                            "-o", str(AUDIO / "%(id)s.%(ext)s"), v["url"]],
+                       capture_output=True, text=True)
+    return None if r.returncode == 0 else (r.stderr.strip().splitlines() or ["erro"])[-1]
+
+
+def main():
+    AUDIO.mkdir(parents=True, exist_ok=True)
+    antigos = {}
+    if (DATA / "videos.json").exists():
+        antigos = {v["id"]: v for v in json.loads((DATA / "videos.json").read_text())}
+    videos = [antigos.get(v["id"], {}) | v for v in descobrir()]
+    print(f"{len(videos)} lives encontradas")
+
+    so_metadados = "--so-metadados" in sys.argv
+    erros = 0
+    for v in videos:
+        erro = None if v.get("inicio_live") else completar(v)
+        if not erro and not so_metadados:
+            erro = baixar(v)
+        v["audio"] = (AUDIO / f"{v['id']}.m4a").exists()
+        if erro:
+            erros += 1
+            print(f"  {v['id']} {v['titulo']}: {erro}")
+        (DATA / "videos.json").write_text(json.dumps(videos, ensure_ascii=False, indent=1))
+
+    print(f"áudios em disco: {sum(v['audio'] for v in videos)}/{len(videos)}; erros: {erros}")
+    if erros and not os.environ.get("YTDLP_COOKIES"):
+        print("dica: o YouTube pode estar pedindo login; veja YTDLP_COOKIES no README")
+
+
+if __name__ == "__main__":
+    main()
