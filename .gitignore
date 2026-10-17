@@ -1,0 +1,10 @@
+# dados ficam fora do git (ver data/README.md)
+data/*
+!data/README.md
+.venv/
+.env
+__pycache__/
+*.pyc
+cookies.txt
+BRIEFING.md
+STATUS.md
