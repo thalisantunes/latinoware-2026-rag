@@ -52,19 +52,20 @@ INSTRUCOES = {
            "Cite as fontes com [n]. Se os trechos não trazem a resposta, diga que não encontrou "
            "essa informação nas palestras indexadas. Se o trecho que responde não tem palestrante "
            "identificado, diga isso, informe o espaço e o dia e sugira ouvir o vídeo a partir do "
-           "instante indicado (h:mm:ss)."),
+           "instante que aparece no cabeçalho do trecho (escreva o horário, por exemplo 3:54:33)."),
     "en": ("You answer questions about Latinoware 2026 (Foz do Iguaçu, Brazil, October 14-16, "
            "2026) using ONLY the numbered excerpts below, which may be in Portuguese. Answer in "
            "English. Cite sources as [n]. If the excerpts do not contain the answer, say you could "
            "not find it in the indexed talks. If the excerpt that answers has no identified speaker, "
-           "say so, give the room and the day, and suggest listening to the video from the given "
-           "time (h:mm:ss)."),
+           "say so, give the room and the day, and suggest listening to the video from the time shown "
+           "in the excerpt header (write the actual time, e.g. 3:54:33)."),
     "es": ("Respondes preguntas sobre Latinoware 2026 (Foz do Iguaçu, Brasil, 14 al 16 de octubre "
            "de 2026) usando SOLO los fragmentos numerados abajo, que pueden estar en portugués. "
            "Responde en español. Cita las fuentes con [n]. Si los fragmentos no contienen la "
            "respuesta, di que no la encontraste en las charlas indexadas. Si el fragmento que "
            "responde no tiene ponente identificado, dilo, indica el espacio y el día y sugiere "
-           "escuchar el video desde el instante indicado (h:mm:ss)."),
+           "escuchar el video desde el instante que aparece en el encabezado del fragmento (escribe la "
+           "hora, por ejemplo 3:54:33)."),
 }
 RESUMO = {
     "pt": ("Você resume uma palestra da Latinoware 2026 usando SOMENTE os trechos numerados abaixo (resumo do "

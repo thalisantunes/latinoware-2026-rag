@@ -4,7 +4,7 @@ export
 
 PY = uv run python
 
-.PHONY: tudo weaviate coletar audio transcrever sincronizar indexar catalogo api testar avaliar
+.PHONY: tudo weaviate coletar audio transcrever sincronizar indexar catalogo api testar avaliar benchmark
 tudo: weaviate coletar audio transcrever sincronizar indexar catalogo
 
 weaviate:
@@ -33,6 +33,11 @@ api:
 
 avaliar:
 	$(PY) 06_avaliar_busca.py
+
+# modelos do Ollama local a comparar; ex.: make benchmark MODELOS="qwen3:14b gemma4:12b-it-qat"
+MODELOS ?= qwen3:14b
+benchmark:
+	$(PY) 09_benchmark_llm.py $(MODELOS)
 
 testar:
 	uv run --with pytest pytest -q tests/

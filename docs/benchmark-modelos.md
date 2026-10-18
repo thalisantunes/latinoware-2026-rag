@@ -58,3 +58,28 @@ Aprovação: fidelidade média >= a do qwen3:14b menos 0,1, idioma 100%, total p
 Custo do juiz: 360 respostas em lotes de ~30 por agent; reduzir a 1 execução julgada por pergunta se pesar (as 3 execuções servem a latência).
 
 Fontes: ollama.com/library (listagem e tags de qwen3.5, gemma4, granite4.2, ministral-3, gpt-oss); huggingface.co/Qwen/Qwen3.5-9B; huggingface.co/google/gemma-4-12b-it; huggingface.co/jinaai/jina-reranker-v3; huggingface.co/Qwen/Qwen3-Reranker-0.6B; huggingface.co/mixedbread-ai/mxbai-rerank-base-v2; Hardware Corner (gpt-oss 20b, 43,8 tok/s).
+
+## 6. Resultado (2026-10-18, medido)
+
+Protocolo: `09_benchmark_llm.py` (`make benchmark MODELOS="..."`), 30 perguntas de `tests/perguntas_bench.json`
+(10 do gabarito, 5 com nome próprio, 5 sem resposta, 5 de idioma cruzado, 5 com vários trechos), contexto
+congelado (mesmos 8 trechos e prompt da API), 1 aquecimento + 3 rodadas, temperature 0,2, num_ctx 16384,
+think=false. Qualidade: juiz Claude Sonnet cego (respostas A-D embaralhadas por pergunta), 1ª rodada,
+notas 0-2 em fidelidade, citações e utilidade (soma 0-6).
+
+| modelo | 1º token p50 | total p50 | total p95 | tokens/s | VRAM pico | idioma | [n] válidos | qualidade (0-6) | sem resposta | cruzado |
+|---|---|---|---|---|---|---|---|---|---|---|
+| qwen3:14b (atual) | 2,9 s | 7,1 s | 22,0 s | 42 | 13,4 GB | 100% | 100% | 5,03 | 5,6 | 4,2 |
+| qwen3.5:9b | 0,7 s | 4,5 s | 12,5 s | 68 | 8,3 GB | 100% | 100% | 5,33 | 5,0 | 4,4 |
+| gemma4:12b-it-qat | 2,2 s | 7,5 s | 13,6 s | 48 | 9,7 GB | 100% | 100% | 5,90 | 6,0 | 5,8 |
+| ministral-3:8b | 1,7 s | 7,9 s | 13,8 s | 68 | 9,5 GB | 100% | 100% | 4,03 | 5,4 | 3,2 |
+
+Caso dirigido (trecho fora da grade, "Quem falou sobre Nova Porteirinha?" em pt/en/es, 3× cada): o modelo
+deve dar o instante do vídeo que está no cabeçalho do trecho. Acertos: qwen3:14b 9/9, gemma4 7/9,
+qwen3.5:9b 4/9 (omite ou inventa o horário).
+
+Decisão pela regra (qualidade igual ou melhor e tempo total ≥30% menor): **nenhum candidato passa; fica o
+qwen3:14b**. O qwen3.5:9b é 37% mais rápido e tem nota geral maior, mas falha no caso dirigido e recusa pior
+quando não há resposta. O gemma4 tem a melhor qualidade em todos os tipos e usa 3,7 GB a menos de VRAM
+(liberaria a GPU para o reranker), sem ganho de tempo no p50 (p95 bem melhor): candidato se a prioridade for
+qualidade. Removidos do disco: qwen3.5:9b e ministral-3:8b. Limites: 30 perguntas, 1 juiz, 1 rodada julgada.
