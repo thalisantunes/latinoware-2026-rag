@@ -62,8 +62,12 @@ ARQ_VERSAO = Path(__file__).parent / "data" / "versao_indice.txt"
 
 
 def versao_indice():
-    """Lida a cada pergunta: depois de `make indexar` o cache antigo deixa de valer mesmo sem reiniciar a API."""
-    return ARQ_VERSAO.read_text().strip() if ARQ_VERSAO.exists() else "0"
+    """Versão do índice no ar, lida a cada pergunta: o alvo do alias Trecho (exato, mesmo no meio de uma troca ou
+    depois de --reverter); sem alias, o arquivo gravado pelo 04_indexar.py."""
+    try:
+        return app.state.wv.alias.list_all()["Trecho"].collection.split("_", 1)[1]
+    except Exception:
+        return ARQ_VERSAO.read_text().strip() if ARQ_VERSAO.exists() else "0"
 CORS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "https://ilove.the.br,https://www.ilove.the.br,https://rede-cidades.pages.dev,https://latinoware.org,https://www.latinoware.org,http://localhost:8765").split(",")]
 MAX_TOKENS = int(os.environ.get("LLM_MAX_TOKENS", 800))
 # sem limite, uma palestra longa e bem transcrita ocupava 7 das 8 fontes

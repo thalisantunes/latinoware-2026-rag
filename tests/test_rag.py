@@ -323,10 +323,10 @@ def test_trocar_alias_guarda_so_atual_e_anterior():
 
     class Alias:
         def __init__(self):
-            self.mapa = {"Trecho": "Trecho_V1", "Palestra": "Palestra_V1", "Palestrante": "Palestrante_V1"}
+            self.mapa = {"Trecho": "Trecho_V2", "Palestra": "Palestra_V2", "Palestrante": "Palestrante_V2"}
 
         def list_all(self):
-            return dict(self.mapa)
+            return {n: type("A", (), {"collection": c})() for n, c in self.mapa.items()}
 
         def update(self, alias_name, new_target_collection):
             self.mapa[alias_name] = new_target_collection
@@ -338,4 +338,33 @@ def test_trocar_alias_guarda_so_atual_e_anterior():
     cli = Cliente()
     indexar.trocar_alias(cli, "V3")
     assert cli.alias.mapa["Trecho"] == "Trecho_V3"
-    assert indexar.versoes(cli, "Trecho") == ["Trecho_V3", "Trecho_V2"]  # a V1 saiu; a V2 fica para reverter
+    assert indexar.versoes(cli, "Trecho") == ["Trecho_V3", "Trecho_V2"]  # a V1 saiu; a V2 (que estava no ar) fica
+
+
+def test_reverter_vai_para_a_anterior_a_atual(monkeypatch, tmp_path):
+    class Alias:
+        mapa = {n: f"{n}_V3" for n in indexar.COLECOES}
+
+        def list_all(self):
+            return {n: type("A", (), {"collection": c})() for n, c in self.mapa.items()}
+
+        def update(self, alias_name, new_target_collection):
+            self.mapa[alias_name] = new_target_collection
+
+    class Cliente:
+        alias = Alias()
+        collections = type("C", (), {"list_all": lambda self: {f"{n}_V{v}": None for n in indexar.COLECOES
+                                                               for v in (2, 3)}})()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            pass
+
+    monkeypatch.setattr(indexar, "conectar", Cliente)
+    monkeypatch.setattr(indexar, "DATA", tmp_path)
+    indexar.reverter()
+    assert Cliente.alias.mapa["Trecho"] == "Trecho_V2" and (tmp_path / "versao_indice.txt").read_text() == "V2"
+    with pytest.raises(SystemExit):  # já está na mais antiga: não há para onde voltar
+        indexar.reverter()
