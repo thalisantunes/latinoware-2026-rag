@@ -4,7 +4,7 @@ export
 
 PY = uv run python
 
-.PHONY: tudo weaviate coletar audio transcrever sincronizar indexar catalogo api testar avaliar benchmark fotos fotos-limpar videos-individuais
+.PHONY: tudo weaviate coletar audio transcrever sincronizar indexar catalogo api testar avaliar benchmark fotos fotos-limpar videos-individuais novos-videos
 tudo: weaviate coletar audio transcrever sincronizar indexar catalogo
 
 weaviate:
@@ -58,3 +58,9 @@ fotos-limpar:
 # grava com GRAVAR=1
 videos-individuais:
 	$(PY) 11_videos_palestras.py "$(PLAYLIST)" $(if $(GRAVAR),--gravar)
+
+# vídeos novos (ex.: os do Espaço Iguaçu, quando a reivindicação da SME cair): baixa, transcreve e reindexa;
+# make novos-videos VIDEOS="9Dck3H7xOGE GSUcnRPFDpE KGIWmBq2t_A" (os ids que ainda não aparecem nas listagens)
+novos-videos:
+	$(PY) 02_baixar_audio.py $(VIDEOS)
+	$(MAKE) transcrever sincronizar indexar catalogo

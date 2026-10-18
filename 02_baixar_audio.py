@@ -4,6 +4,7 @@ As gravações são lives de dia inteiro, uma por espaço e dia, publicadas pelo
 Itaipu Parquetec com títulos "Latinoware 2026 - Espaço <Sala> - DD/10".
 
 Saída: data/videos.json (metadados) e data/audio/<id>.m4a.
+Uso: python 02_baixar_audio.py [--so-metadados] [<id ou URL de vídeo/playlist> ...]
 
 O YouTube pode pedir login ("Sign in to confirm you're not a bot") conforme o IP.
 Nesse caso, rode com YTDLP_COOKIES_BROWSER=chrome (ou chrome:Perfil, firefox...), que lê os
@@ -24,8 +25,11 @@ YTDLP = [sys.executable, "-m", "yt_dlp", "--js-runtimes", "node", "--sleep-reque
 CANAL_ID = "UCNYfFA05lPFYMdB1kUkhKcA"  # Itaipu Parquetec, que transmitiu as lives
 CANAL = f"https://www.youtube.com/channel/{CANAL_ID}"
 # a busca do YouTube varia entre chamadas; ela complementa a listagem do canal
+# playlists oficiais da Latinoware 2026 (uma por dia) no canal do Itaipu Parquetec
+PLAYLISTS = ["PLHC5slR1VDy4", "PLVG4LGm089OA", "PLZtK9mf5VVtE"]
 FONTES = [f"{CANAL}/streams", f"{CANAL}/videos", "ytsearch50:Latinoware 2026 - Espaço"] + [
-    f"ytsearch50:Latinoware 2026 Espaço {d}/10" for d in (14, 15, 16)]
+    f"ytsearch50:Latinoware 2026 Espaço {d}/10" for d in (14, 15, 16)] + [
+    f"https://www.youtube.com/playlist?list={p}" for p in PLAYLISTS]
 TITULO = re.compile(r"Latinoware 2026 - Espaço (?P<espaco>.+?) - (?P<dia>\d{2})/10")
 
 
@@ -36,14 +40,16 @@ def cookies():
     return ["--cookies", c] if c else []
 
 
-def descobrir():
+def descobrir(extras=()):
+    """Lives do canal oficial nas fontes fixas e nas extras (ids ou URLs de vídeo/playlist passados na linha de
+    comando, para vídeos que ainda não aparecem nas listagens)."""
     videos = {}
-    for fonte in FONTES:
+    for fonte in FONTES + [e if "/" in e else f"https://www.youtube.com/watch?v={e}" for e in extras]:
         out = subprocess.run(YTDLP + ["--flat-playlist", "--dump-json", "--playlist-end", "200", fonte],
                              capture_output=True, text=True).stdout
         for linha in out.splitlines():
             d = json.loads(linha)
-            m = TITULO.search(d.get("title", ""))
+            m = TITULO.search(d.get("title") or "")  # vídeo privado vem sem título
             # só vídeos do canal oficial; a busca pode trazer reenvios de terceiros
             if m and (fonte.startswith(CANAL) or d.get("channel_id") == CANAL_ID):
                 videos[d["id"]] = {
@@ -85,7 +91,7 @@ def main():
     antigos = {}
     if (DATA / "videos.json").exists():
         antigos = {v["id"]: v for v in json.loads((DATA / "videos.json").read_text())}
-    videos = [antigos.get(v["id"], {}) | v for v in descobrir()]
+    videos = [antigos.get(v["id"], {}) | v for v in descobrir([a for a in sys.argv[1:] if not a.startswith("--")])]
     print(f"{len(videos)} lives encontradas")
 
     so_metadados = "--so-metadados" in sys.argv

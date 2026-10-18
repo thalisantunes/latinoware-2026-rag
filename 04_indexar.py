@@ -99,6 +99,8 @@ def alinhar_palestras(palestras, videos, manual, inicios=True):
     """
     alinhadas = {}
     for v in videos:
+        if v.get("audio") is False:  # listado mas indisponível no YouTube (bloqueado, privado): não vira link
+            continue
         do_dia, t0, fonte = live_do_espaco(v, palestras, videos, manual)
         if not t0 or not v.get("duracao"):
             continue

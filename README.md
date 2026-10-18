@@ -153,7 +153,7 @@ YTDLP_COOKIES_BROWSER=chrome make audio
 Without cookies, `02_baixar_audio.py` saves only the lives' metadata, and the RAG works from
 talk abstracts and speaker bios.
 
-### Data status (Oct 17, 2026)
+### Data status (Oct 18, 2026)
 
 - Schedule: 236 activities (229 distinct; keynotes repeat across rooms), all with an abstract.
   Declared languages: 208 Portuguese, 24 English, 4 Spanish.
@@ -164,8 +164,12 @@ talk abstracts and speaker bios.
 - Transcripts: 17/17 lives (118 h of audio, about 559k words) with faster-whisper
   large-v3-turbo. Live start times come from YouTube, so excerpts link to the right moment.
   The Espaço Iguaçu lives are mostly waiting music: 3 of them yielded almost no speech.
-- Index: 2293 excerpts (236 abstracts, 168 bios, 1889 from transcripts; 89 of these fall
-  outside the schedule). Search recall@8 = 9/10.
+- Index: 2296 excerpts (236 abstracts, 168 bios, 1892 from transcripts; 93 of these fall
+  outside the schedule). Search recall@8 = 10/10.
+- Talks with video: 63 of 236. A talk counts as recorded only when the transcript has speech in its window
+  (keynotes are listed in every room, but only some lives carried the audio); start times are read from the
+  transcript. Three more Espaço Iguaçu lives are blocked on YouTube by a content claim and one is private:
+  `make novos-videos VIDEOS="<ids>"` ingests them when released.
 
 ### Speaker photos
 
@@ -348,7 +352,7 @@ YTDLP_COOKIES_BROWSER=chrome make audio
 Sin cookies, `02_baixar_audio.py` guarda solo los metadatos de las lives, y la RAG funciona con
 los resúmenes de las charlas y las biografías de los ponentes.
 
-### Estado de los datos (17/10/2026)
+### Estado de los datos (18/10/2026)
 
 - Programación: 236 actividades (229 distintas; las keynotes se repiten en varios espacios),
   todas con resumen. Idiomas declarados: 208 en portugués, 24 en inglés, 4 en español.
@@ -360,8 +364,12 @@ los resúmenes de las charlas y las biografías de los ponentes.
   large-v3-turbo. El inicio de cada live viene de YouTube, así que los fragmentos enlazan al
   momento correcto. Las lives del Espaço Iguaçu son casi todo música de espera: 3 de ellas
   casi no tienen habla.
-- Índice: 2293 fragmentos (236 resúmenes, 168 bios, 1889 de transcripciones; 89 de ellos fuera
-  de la programación). recall@8 de la búsqueda = 9/10.
+- Índice: 2296 fragmentos (236 resúmenes, 168 bios, 1892 de transcripciones; 93 de ellos fuera
+  de la programación). recall@8 de la búsqueda = 10/10.
+- Charlas con video: 63 de 236. Una charla cuenta como grabada solo si la transcripción tiene habla en su
+  ventana (las keynotes figuran en todos los espacios, pero solo algunas lives transmitieron el audio); el
+  inicio se lee de la transcripción. Otras tres lives del Espaço Iguaçu están bloqueadas en YouTube por un
+  reclamo de contenido y una es privada: `make novos-videos VIDEOS="<ids>"` las incorpora cuando se liberen.
 
 ### Fotos de los ponentes
 
@@ -543,7 +551,7 @@ YTDLP_COOKIES_BROWSER=chrome make audio
 Sem cookies, `02_baixar_audio.py` salva só os metadados das lives, e a RAG funciona com os
 resumos das palestras e as bios dos palestrantes.
 
-### Estado dos dados (17/10/2026)
+### Estado dos dados (18/10/2026)
 
 - Grade: 236 atividades (229 distintas; keynotes repetem em vários espaços), todas com resumo.
   Idiomas declarados: 208 em português, 24 em inglês, 4 em espanhol.
@@ -554,8 +562,12 @@ resumos das palestras e as bios dos palestrantes.
 - Transcrições: 17/17 lives (118 h de áudio, cerca de 559 mil palavras) com faster-whisper
   large-v3-turbo. O início de cada live vem do YouTube, então os trechos levam ao instante
   certo. As lives do Espaço Iguaçu são quase só música de espera: 3 delas quase não têm fala.
-- Índice: 2293 trechos (236 resumos, 168 bios, 1889 de transcrições; 89 destes fora da grade).
-  recall@8 da busca = 9/10.
+- Índice: 2296 trechos (236 resumos, 168 bios, 1892 de transcrições; 93 destes fora da grade).
+  recall@8 da busca = 10/10.
+- Palestras com vídeo: 63 de 236. A palestra só conta como gravada se a transcrição tem fala na janela dela
+  (as keynotes aparecem em todos os espaços, mas só algumas lives transmitiram o áudio); o início vem da
+  transcrição. Outras três lives do Espaço Iguaçu estão bloqueadas no YouTube por reivindicação de conteúdo e
+  uma é privada: `make novos-videos VIDEOS="<ids>"` as incorpora quando forem liberadas.
 
 ### Fotos dos palestrantes
 
