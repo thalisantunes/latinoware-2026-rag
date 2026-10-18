@@ -54,7 +54,7 @@
   };
 
   const CSS = `
-    /* container-type zera a largura intrínseca: width 100% evita colapsar dentro de flex/grid do site */
+    /* container-type zera a largura intrínseca */
     :host { display: block; width: 100%; font: inherit; color: inherit; container-type: inline-size;
       --a: var(--lw-accent, var(--accent, light-dark(#17694a, #5cc595)));
       --af: var(--lw-accent-fg, var(--accent-fg, light-dark(#fff, #0d1f16)));
@@ -105,12 +105,12 @@
     .galeria { list-style: none; padding: 0; display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
     .galeria img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; display: block; }
     .galeria small { color: var(--m); font-size: .75rem; }
-    /* contêiner largo (a largura do site que hospeda, não a da janela): filtros numa linha, cards em grade */
+    /* contêiner largo (largura do site, não da janela) */
     @container (min-width: 1000px) {
       .filtros { grid-template-columns: 2fr repeat(4, 1fr); }
       .busca { grid-column: auto; }
       ul.lista { grid-template-columns: repeat(2, 1fr); }
-      ul.lista > li { display: flex; } /* cards da mesma linha com a mesma altura */
+      ul.lista > li { display: flex; }
       ul.lista article { flex: 1; }
       .pessoa:has(.rosto) { grid-template-columns: 180px 1fr; align-items: start; }
       .pessoa .rosto { width: 180px; height: 180px; grid-row: span 4; }
@@ -287,7 +287,8 @@
       if (api) { // API fora: avisa e esconde os botões de IA; o catálogo segue
         fetch(`${api.replace(/\/$/, "")}/health`, { signal: AbortSignal.timeout(10000) }).then(r => r.json())
           .then(d => { if (!d.ok) throw new Error(); }).catch(() => {
-            raiz.querySelector(".ia .out").innerHTML = `<p class="msg" role="status">${esc(this.t.fora)}</p>`;
+            const out = raiz.querySelector(".ia .out");
+            if (!this.ocupado && !out.firstChild) out.innerHTML = `<p class="msg" role="status">${esc(this.t.fora)}</p>`;
             raiz.querySelectorAll(".perg").forEach(b => { b.hidden = true; });
           });
         const f = raiz.querySelector(".ia");
@@ -409,7 +410,9 @@
       const pedir = rota => fetch(`${this.getAttribute("api").replace(/\/$/, "")}${rota}`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pergunta, idioma: this.idioma, ...(palestra_id && { palestra_id }) }),
-        signal: AbortSignal.timeout(90000) });
+        signal: AbortSignal.timeout(90000) }).catch(e => { // só falha de rede vira "IA fora do ar"
+          throw e.name === "TimeoutError" ? e : new Error("fora");
+        });
       try {
         let r = await pedir("/ask/stream"), d;
         if (r.status === 404 || r.status === 405) r = await pedir("/ask"); // API sem streaming
@@ -436,13 +439,14 @@
         }
         if (!d) throw new Error("erro");
         out.querySelector(".msg").remove();
+        this.shadowRoot.querySelectorAll(".perg").forEach(b => { b.hidden = false; }); // a API voltou
         resp.lang = d.idioma || "";
         resp.textContent = d.resposta;
         this.partilha(out, pergunta, d.resposta, `${t.fontes}:\n${dadosFontes.map(s =>
           `[${s.n}] ${s.titulo}${s.palestrantes ? ` (${s.palestrantes})` : ""} ${s.url_video || s.url}`).join("\n")}`);
       } catch (e) {
         // sem resposta do servidor (TypeError do fetch): a API está fora, não é erro da pergunta
-        const msg = e.name === "TimeoutError" ? t.demorou : e.name === "TypeError" ? t.fora : e.message === "ocupado" ? t.ocupado : t.erro;
+        const msg = e.name === "TimeoutError" ? t.demorou : e.message === "fora" ? t.fora : e.message === "ocupado" ? t.ocupado : t.erro;
         out.innerHTML = `<p class="msg" role="alert">${esc(msg)}</p>`;
       } finally {
         this.ocupado = false;

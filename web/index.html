@@ -197,6 +197,7 @@
       fontes: "Fontes", fonte: "Fonte", pronto: "Resposta pronta.",
       vazio: "Nenhum trecho encontrado para essa pergunta. Tente outras palavras ou o nome de um palestrante.",
       erro: "Não foi possível responder agora.", ocupado: "Muitas perguntas ao mesmo tempo. Tente de novo em alguns segundos.",
+      caiu: "A conexão caiu no meio da resposta. Tente de novo.",
       rede: "A IA está fora do ar agora (roda numa GPU doméstica). A programação abaixo continua disponível.", demora: "O servidor demorou demais para responder.", tentar: "Tentar de novo",
       tipo: { resumo: "Resumo", bio: "Palestrante", transcricao: "Vídeo" },
       assistir: "Assistir no YouTube", semGravacao: "Sem gravação",
@@ -227,6 +228,7 @@
       fontes: "Sources", fonte: "Source", pronto: "Answer ready.",
       vazio: "No excerpts found for this question. Try other words or a speaker's name.",
       erro: "Could not answer right now.", ocupado: "Too many questions at once. Try again in a few seconds.",
+      caiu: "The connection dropped in the middle of the answer. Try again.",
       rede: "The AI is offline right now (it runs on a home GPU). The schedule below is still available.", demora: "The server took too long to answer.", tentar: "Try again",
       tipo: { resumo: "Abstract", bio: "Speaker", transcricao: "Video" },
       assistir: "Watch on YouTube", semGravacao: "No recording",
@@ -257,6 +259,7 @@
       fontes: "Fuentes", fonte: "Fuente", pronto: "Respuesta lista.",
       vazio: "No se encontraron fragmentos para esta pregunta. Prueba otras palabras o el nombre de un ponente.",
       erro: "No se pudo responder ahora.", ocupado: "Demasiadas preguntas a la vez. Inténtalo de nuevo en unos segundos.",
+      caiu: "La conexión se cortó en medio de la respuesta. Inténtalo de nuevo.",
       rede: "La IA está fuera de línea ahora (corre en una GPU doméstica). La programación de abajo sigue disponible.", demora: "El servidor tardó demasiado en responder.", tentar: "Intentar de nuevo",
       tipo: { resumo: "Resumen", bio: "Ponente", transcricao: "Video" },
       assistir: "Ver en YouTube", semGravacao: "Sin grabación",
@@ -389,7 +392,11 @@
   function saude() {
     fetch(API_URL + "/health", { signal: AbortSignal.timeout(10000) }).then((r) => r.json())
       .then((d) => { servidor = d; fora = !d.ok; }).catch(() => { fora = true; })
-      .finally(() => { $("fora").textContent = ui().rede; $("fora").hidden = !fora; });
+      .finally(() => {  // só mexe no aviso se mudou (a região viva repete) e não no meio de uma resposta
+        if (ocupado) return;
+        if ($("fora").textContent !== ui().rede) $("fora").textContent = ui().rede;
+        if ($("fora").hidden !== !fora) $("fora").hidden = !fora;
+      });
   }
   saude();
   setInterval(saude, 60000);
@@ -502,7 +509,7 @@
           else if (ev === "fim") d = x;
           else if (ev === "erro") { status = x.status; throw new Error(status); }
         }
-        if (!d && fontes.length) { status = undefined; throw new Error("rede"); }  // conexão caiu antes do fim
+        if (!d && fontes.length) { status = 0; throw new Error("caiu"); }  // conexão caiu no meio da resposta
       }
       fontes = fontes.filter((f) => f && Number.isInteger(f.n));
       if (!fontes.length || typeof d?.resposta !== "string") { mostrar(t.vazio, el("div", { className: "estado vazio", textContent: t.vazio })); return; }
@@ -517,7 +524,7 @@
       $("saida").focus();
     } catch (err) {
       if (status === 404) { mostrar(t.vazio, el("div", { className: "estado vazio", textContent: t.vazio })); return; }  // palestra sem trechos
-      const msg = err.name === "TimeoutError" ? t.demora : !status ? t.rede : status === 429 ? t.ocupado
+      const msg = err.name === "TimeoutError" ? t.demora : status === 0 ? t.caiu : !status ? t.rede : status === 429 ? t.ocupado
         : `${t.erro} (${status})`;
       mostrar(msg, el("div", { className: "estado erro" }, el("p", { textContent: msg }),
         el("button", { type: "button", textContent: t.tentar, onclick: () => perguntar(pergunta, palestraId) })));

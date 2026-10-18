@@ -14,4 +14,4 @@ r = api.resumo(eventos)
 idiomas = ", ".join(f"{k} {v}" for k, v in sorted(r["idiomas"].items()))
 print(f"- uso, 7 dias até {fim}: {r['perguntas']} perguntas ({idiomas or 'nenhuma'}); reaproveitadas "
       f"{r['reaproveitadas']}; resumos {r['resumos']}; sem resposta {r['sem_resposta']}; 429 {r['ocupado_429']}; "
-      f"desistências {r['desistencias']}; erros {r['erros']}; tempo p50 {r['p50_s'] or '–'} s, p95 {r['p95_s'] or '–'} s")
+      f"desistências {r['desistencias']}; erros {r['erros']}; tempo p50 {'–' if r['p50_s'] is None else r['p50_s']} s, p95 {'–' if r['p95_s'] is None else r['p95_s']} s")

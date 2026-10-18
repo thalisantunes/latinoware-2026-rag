@@ -672,7 +672,12 @@ def norma(pergunta):
 
 @app.get("/health")
 def health():
-    return {"ok": app.state.wv.is_ready(), "modelo": LLM_MODEL, "reranker": (RERANK_LOCAL if _reranker is not False else None) or (RERANK_MODEL if RERANK_URL else None)}
+    """ok exige o Weaviate e o Ollama (embedding e geração); com provedor externo, só o Weaviate."""
+    try:
+        llm = bool(LLM_API_KEY) or httpx.get(f"{OLLAMA}/api/version", timeout=3).is_success
+    except httpx.HTTPError:
+        llm = False
+    return {"ok": app.state.wv.is_ready() and llm, "weaviate": app.state.wv.is_ready(), "llm": llm, "modelo": LLM_MODEL, "reranker": (RERANK_LOCAL if _reranker is not False else None) or (RERANK_MODEL if RERANK_URL else None)}
 
 
 # página, componente e catálogo; montado por último para não engolir /ask e /health
