@@ -89,7 +89,8 @@ make audio        # network-dependent; see "YouTube asking for sign-in"
 make transcrever  # estimate: 2 to 4 h for 122 h of audio [not measured]
 make indexar      # ~1 min without transcripts; a few minutes with them
 make api          # http://localhost:8765 (page + API)
-make avaliar      # recall@8 on the 10 reference questions
+make avaliar      # recall@8 on the reference questions; fails below 100% (also runs after make indexar)
+make gabarito-candidatos  # suggestions from the history; add only the checked ones to data/gabarito_extra.json
 make testar       # tests; integration tests need the API running
 ```
 
@@ -292,7 +293,8 @@ make audio        # depende de la red; ver "YouTube pidiendo inicio de sesión"
 make transcrever  # estimación: 2 a 4 h para 122 h de audio [no medido]
 make indexar      # ~1 min sin transcripciones; unos minutos con ellas
 make api          # http://localhost:8765 (página + API)
-make avaliar      # recall@8 de las 10 preguntas de referencia
+make avaliar      # recall@8 de las preguntas de referencia; falla por debajo de 100% (también tras make indexar)
+make gabarito-candidatos  # sugerencias del historial; solo las revisadas van a data/gabarito_extra.json
 make testar       # pruebas; las de integración necesitan la API activa
 ```
 
@@ -494,7 +496,8 @@ make audio        # depende da rede; veja "YouTube pedindo login"
 make transcrever  # estimativa: 2 a 4 h para as 122 h de áudio [não medido]
 make indexar      # ~1 min sem transcrições; alguns minutos com
 make api          # http://localhost:8765 (página + API)
-make avaliar      # recall@8 das 10 perguntas-gabarito
+make avaliar      # recall@8 das perguntas-gabarito; falha abaixo de 100% (roda também no make indexar)
+make gabarito-candidatos  # sugestões do histórico; só as conferidas vão para data/gabarito_extra.json
 make testar       # testes; os de integração precisam da API no ar
 ```
 

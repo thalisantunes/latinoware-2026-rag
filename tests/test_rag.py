@@ -294,3 +294,11 @@ def test_stats_conta_pergunta_sem_guardar_texto():
     depois = httpx.get(f"{API_URL}/stats", params={"dias": 2}).json()
     assert depois["total"]["perguntas"] >= antes + 1  # outro tráfego pode somar
     assert PERGUNTAS["en"] not in json.dumps(depois)
+
+
+def test_gabarito_extra(tmp_path, monkeypatch):
+    avaliar = modulo("06_avaliar_busca.py")
+    monkeypatch.setattr(avaliar.indexar, "DATA", tmp_path)
+    assert avaliar.gabarito() == avaliar.GABARITO  # sem arquivo, só o fixo
+    (tmp_path / "gabarito_extra.json").write_text(json.dumps([["Quem falou de KiCad?", "Embarcados"]]))
+    assert avaliar.gabarito()[-1] == ("Quem falou de KiCad?", "Embarcados")

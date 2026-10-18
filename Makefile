@@ -4,7 +4,7 @@ export
 
 PY = uv run python
 
-.PHONY: tudo weaviate coletar audio transcrever sincronizar indexar catalogo api testar avaliar benchmark fotos fotos-limpar videos-individuais novos-videos metricas
+.PHONY: tudo weaviate coletar audio transcrever sincronizar indexar catalogo api testar avaliar benchmark fotos fotos-limpar videos-individuais novos-videos metricas gabarito-candidatos
 tudo: weaviate coletar audio transcrever sincronizar indexar catalogo
 
 weaviate:
@@ -22,8 +22,10 @@ transcrever:
 sincronizar:
 	$(PY) 08_sincronizar_inicio.py
 
+# depois de indexar, a avaliação de busca: falha se o recall cair abaixo de 100%
 indexar:
 	$(PY) 04_indexar.py
+	$(PY) 06_avaliar_busca.py
 
 catalogo:
 	$(PY) 07_exportar_catalogo.py
@@ -33,6 +35,10 @@ api:
 
 avaliar:
 	$(PY) 06_avaliar_busca.py
+
+# sugestões de perguntas do histórico para o gabarito (conferir à mão antes de usar)
+gabarito-candidatos:
+	$(PY) 06_avaliar_busca.py --candidatos
 
 # modelos do Ollama local a comparar; ex.: make benchmark MODELOS="qwen3:14b gemma4:12b-it-qat"
 MODELOS ?= qwen3:14b
