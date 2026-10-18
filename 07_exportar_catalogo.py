@@ -45,6 +45,8 @@ def main():
         sys.exit("grade vazia: rode make coletar")
     alinhadas = indexar.alinhar_palestras(palestras, videos, manual)
     duracao = {v["id"]: v["duracao"] for v in videos}
+    # foto pública de cada palestrante no site (10_fotos.py referencias); o componente faz hotlink
+    fotos = indexar.carregar_json(data / "fotos" / "referencias.json", {})
     transcritos = {v["id"] for v in videos if (data / "transcricoes" / f"{v['id']}.json").exists()}
     if len(transcritos) < len(videos):
         # sem transcrição não dá para saber se a live transmitiu o áudio de cada palestra
@@ -85,7 +87,8 @@ def main():
                     "url": f"https://youtu.be/{v['id']}"} for v in videos],
         "palestras": saida,
         "palestrantes": [{"id": s["id"], "nome": s["nome"], "url": s["url"], "organizacao": s["organizacao"],
-                          "pais": s["pais"], "palestras": uids_de.get(s["url"], [])} for s in pessoas],
+                          "pais": s["pais"], "palestras": uids_de.get(s["url"], []),
+                          "foto": fotos.get(str(s["id"]), {}).get("url_foto")} for s in pessoas],
     }
     destino = RAIZ / "web" / "catalogo.json"
     destino.write_text(json.dumps(catalogo, ensure_ascii=False, separators=(",", ":")) + "\n")

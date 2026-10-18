@@ -149,11 +149,12 @@
     <section id="saida" tabindex="-1"></section>
     <section class="bloco" id="catalogo" aria-labelledby="hcat">
       <h2 id="hcat"></h2>
-      <latinoware-catalogo src="./catalogo.json" perguntar></latinoware-catalogo>
+      <latinoware-catalogo src="./catalogo.json" fotos="./fotos.json" perguntar></latinoware-catalogo>
     </section>
     <section class="bloco" id="sobre" aria-labelledby="hsobre">
       <h2 id="hsobre"></h2>
       <p id="sobretxt"></p>
+      <p id="privtxt"></p>
     </section>
   </main>
 
@@ -183,6 +184,7 @@
       semPalestra: (e, d) => `Trecho sem palestra identificada · ${e}, ${d}`,
       copiar: "Copiar resposta", compartilhar: "Compartilhar", copiado: "Resposta copiada.", linkCopiado: "Link copiado.",
       naoCopiou: "Não foi possível copiar.", pergunta: "Pergunta",
+      priv: ["As fotos dos palestrantes no evento vêm do Flickr oficial, achadas por reconhecimento facial e conferidas por uma pessoa antes de aparecer. Para remover uma foto: ", "privacidade@ilove.the.br", ". Detalhes em ", "Privacidade", "."],
       hcat: "Programação completa", ir: "Ver a programação completa ↓", hsobre: "Sobre",
       sobre: ["Este projeto nasceu de uma conversa com ", "Duda Nogueira", " (", "Weaviate",
         ") na fila de embarque do voo de volta da Latinoware: o evento tem cauda longa e não acaba quando acaba. Obrigado a ele e à Weaviate."],
@@ -208,6 +210,7 @@
       semPalestra: (e, d) => `Excerpt with no identified talk · ${e}, ${d}`,
       copiar: "Copy answer", compartilhar: "Share", copiado: "Answer copied.", linkCopiado: "Link copied.",
       naoCopiou: "Could not copy.", pergunta: "Question",
+      priv: ["Speaker photos from the event come from the official Flickr, found by face recognition and checked by a person before they appear. To remove a photo: ", "privacidade@ilove.the.br", ". Details at ", "Privacy", "."],
       hcat: "Full schedule", ir: "See the full schedule ↓", hsobre: "About",
       sobre: ["This project was born from a conversation with ", "Duda Nogueira", " (", "Weaviate",
         ") in the boarding line of the flight back from Latinoware: the event has a long tail and does not end when it ends. Thanks to him and to Weaviate."],
@@ -233,6 +236,7 @@
       semPalestra: (e, d) => `Fragmento sin charla identificada · ${e}, ${d}`,
       copiar: "Copiar respuesta", compartilhar: "Compartir", copiado: "Respuesta copiada.", linkCopiado: "Enlace copiado.",
       naoCopiou: "No se pudo copiar.", pergunta: "Pregunta",
+      priv: ["Las fotos de los ponentes en el evento vienen del Flickr oficial, encontradas por reconocimiento facial y revisadas por una persona antes de aparecer. Para quitar una foto: ", "privacidade@ilove.the.br", ". Detalles en ", "Privacidad", "."],
       hcat: "Programación completa", ir: "Ver la programación completa ↓", hsobre: "Acerca de",
       sobre: ["Este proyecto nació de una conversación con ", "Duda Nogueira", " (", "Weaviate",
         ") en la fila de embarque del vuelo de regreso de Latinoware: el evento tiene una cola larga y no termina cuando termina. Gracias a él y a Weaviate."],
@@ -265,6 +269,9 @@
     for (const k of ["h1", "sub", "lq", "dica", "lex", "aviso", "dados", "repo", "ir", "hcat", "hsobre"]) $(k).textContent = t[k];
     const [a, duda, b, wv, c] = t.sobre;
     $("sobretxt").replaceChildren(a, link(duda, "https://github.com/dudanogueira"), b, link(wv, "https://weaviate.io"), c);
+    const [p1, email, p2, pagina, p3] = t.priv;
+    $("privtxt").replaceChildren(p1, el("a", { href: `mailto:${email}`, textContent: email }), p2,
+      link(pagina, "https://ilove.the.br/privacidade/"), p3);
     document.querySelector("latinoware-catalogo").setAttribute("lang", lingua());
     $("q").placeholder = t.ph;
     $("b").textContent = ocupado ? t.enviando : t.enviar;

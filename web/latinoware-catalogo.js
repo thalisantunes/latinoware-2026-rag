@@ -1,6 +1,7 @@
 // <latinoware-catalogo src="catalogo.json" lang="pt" api="https://rag.ilove.the.br" perguntar>
 // Catálogo de palestras da Latinoware com filtros e link para o instante na live.
 // Atributos: src (obrigatório), lang (pt|en|es), api (opcional: liga a pergunta à IA),
+// fotos (opcional: URL de fotos.json, galeria "Fotos no evento" na visão de cada palestrante),
 // perguntar (opcional: mostra "Resumo com IA" e só emite o evento "perguntar" para a página).
 // Sem dependências e sem build. Projeto pessoal e não oficial: github.com/thalisantunes/latinoware-2026-rag
 (() => {
@@ -19,7 +20,9 @@
       perguntaRotulo: "Pergunte sobre as palestras", enviar: "Perguntar", aguarde: "Buscando e escrevendo a resposta…",
       ocupado: "Muitas perguntas agora. Tente de novo em instantes.", demorou: "A resposta demorou demais. Tente de novo.",
       erro: "Não foi possível responder agora.", fontes: "Fontes", video: "Vídeo",
-      copiar: "Copiar resposta", compartilhar: "Compartilhar", copiado: "Resposta copiada.", linkCopiado: "Link copiado.", naoCopiou: "Não foi possível copiar.",
+      copiar: "Copiar resposta", compartilhar: "Compartilhar", paginaSite: "Página no site da Latinoware", fotosEvento: "Fotos no evento", foto: "Foto",
+      fotoDe: n => `${n} na Latinoware`, remover: "Quer remover uma foto? Escreva para",
+      copiado: "Resposta copiada.", linkCopiado: "Link copiado.", naoCopiou: "Não foi possível copiar.",
     },
     en: {
       busca: "Search", buscaPh: "title, speaker, topic…", data: "Day", espaco: "Room", trilha: "Track",
@@ -32,7 +35,9 @@
       perguntaRotulo: "Ask about the talks", enviar: "Ask", aguarde: "Searching and writing the answer…",
       ocupado: "Too many questions right now. Try again shortly.", demorou: "The answer took too long. Try again.",
       erro: "Could not answer right now.", fontes: "Sources", video: "Video",
-      copiar: "Copy answer", compartilhar: "Share", copiado: "Answer copied.", linkCopiado: "Link copied.", naoCopiou: "Could not copy.",
+      copiar: "Copy answer", compartilhar: "Share", paginaSite: "Page on the Latinoware website", fotosEvento: "Photos at the event", foto: "Photo",
+      fotoDe: n => `${n} at Latinoware`, remover: "Want a photo removed? Write to",
+      copiado: "Answer copied.", linkCopiado: "Link copied.", naoCopiou: "Could not copy.",
     },
     es: {
       busca: "Buscar", buscaPh: "título, ponente, tema…", data: "Día", espaco: "Espacio", trilha: "Temática",
@@ -45,7 +50,9 @@
       perguntaRotulo: "Pregunta sobre las charlas", enviar: "Preguntar", aguarde: "Buscando y escribiendo la respuesta…",
       ocupado: "Demasiadas preguntas ahora. Inténtalo de nuevo en breve.", demorou: "La respuesta tardó demasiado. Inténtalo de nuevo.",
       erro: "No se pudo responder ahora.", fontes: "Fuentes", video: "Video",
-      copiar: "Copiar respuesta", compartilhar: "Compartir", copiado: "Respuesta copiada.", linkCopiado: "Enlace copiado.", naoCopiou: "No se pudo copiar.",
+      copiar: "Copiar respuesta", compartilhar: "Compartir", paginaSite: "Página en el sitio de Latinoware", fotosEvento: "Fotos en el evento", foto: "Foto",
+      fotoDe: n => `${n} en Latinoware`, remover: "¿Quieres quitar una foto? Escribe a",
+      copiado: "Respuesta copiada.", linkCopiado: "Enlace copiado.", naoCopiou: "No se pudo copiar.",
     },
   };
 
@@ -90,6 +97,15 @@
     .ia .resp { white-space: pre-wrap; margin: 12px 0 0; }
     .ia ol { margin: 8px 0 0; padding-left: 1.4em; font-size: .9rem; }
     .msg { color: var(--m); }
+    .pessoa { display: grid; grid-template-columns: auto 1fr; gap: 12px 16px; align-items: center; border: 1px solid var(--l);
+      border-radius: var(--r); padding: 16px; margin: 4px 0 16px; }
+    .pessoa h2 { all: unset; display: block; font-size: 1.2rem; font-weight: 700; }
+    .pessoa p { margin: 4px 0 0; }
+    .pessoa > h3, .pessoa > ul, .pessoa > .sem { grid-column: 1 / -1; margin: 0; }
+    .rosto { width: 96px; height: 96px; border-radius: 50%; object-fit: cover; }
+    .galeria { list-style: none; padding: 0; display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+    .galeria img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; display: block; }
+    .galeria small { color: var(--m); font-size: .75rem; }
     .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
     @media (prefers-reduced-motion: no-preference) { article { transition: border-color .15s; } }
   `;
@@ -141,6 +157,14 @@
         const dados = await r.json();
         if (vez !== this.vez) return;
         this.dados = dados;
+        this.pessoas = new Map((dados.palestrantes || []).map(p => [p.url, p]));
+        this.fotos = {};
+        if (this.getAttribute("fotos")) { // opcional: sem fotos.json a visão do palestrante fica sem galeria
+          try {
+            const f = await (await fetch(new URL(this.getAttribute("fotos"), document.baseURI))).json();
+            for (const p of f.palestrantes || []) this.fotos[p.palestrante_id] = p.fotos;
+          } catch (e) { console.warn("latinoware-catalogo: fotos indisponíveis", e); }
+        }
         if (this.dados.versao !== VERSAO) console.warn(`latinoware-catalogo: catálogo versão ${this.dados.versao}, componente ${VERSAO}`);
         this.grupos = this.agrupar(this.dados.palestras);
         this.montar();
@@ -193,7 +217,7 @@
           nomes.map(([u, n]) => `<option value="${esc(u)}">${esc(n)}</option>`).join("")}</select></label></div>
         <div class="linha"><label class="check"><input type="checkbox" name="video">${esc(t.soVideo)}</label>
         <button type="button" class="sec limpar">${esc(t.limpar)}</button></div>
-        <p class="cont" role="status"></p><p class="msg vazio" hidden>${esc(t.nenhum)}</p>`;
+        <p class="cont" role="status"></p><section class="pessoa" hidden></section><p class="msg vazio" hidden>${esc(t.nenhum)}</p>`;
       let atual = null, i = 0;
       for (const g of this.grupos) {
         if (g.data !== atual) {
@@ -202,7 +226,8 @@
           html += `<section data-dia="${esc(g.data)}"><h2>${esc(dia(g.data))}</h2><ul class="lista">`;
         }
         const v = g.video, id = `t${i++}`;
-        const pes = g.palestrantes.map(s => s.url ? `<a href="${url(s.url)}">${esc(s.nome)}</a>` : esc(s.nome)).join(", ");
+        // o nome abre a visão do palestrante aqui; Ctrl/⌘-clique ainda vai à página do site
+        const pes = g.palestrantes.map(s => s.url ? `<a href="${url(s.url)}" data-pessoa="${esc(s.url)}">${esc(s.nome)}</a>` : esc(s.nome)).join(", ");
         html += `<li data-i="${i - 1}"><article id="palestra-${esc(g.uids[0])}" tabindex="-1" aria-labelledby="${id}">
           <h3 id="${id}">${esc(g.titulo)}</h3>${pes ? `<p class="pes">${pes}</p>` : ""}
           <p class="meta"><span>${esc(g.salas.join(" · "))}</span><span>${esc(fmtCurto.format(new Date(`${g.data}T12:00:00Z`)))}, ${esc(g.hora_inicio)}–${esc(g.hora_fim)}</span>
@@ -230,8 +255,14 @@
       raiz.querySelector(".limpar").addEventListener("click", () => this.limpar());
       if (!this.cliques) { // o shadowRoot sobrevive a montar(): um listener só
         this.cliques = e => {
-          const b = e.target.closest(".perg");
+          const b = e.target.closest(".perg"), a = e.target.closest("a[data-pessoa]");
           if (b) this.perguntar(this.grupos[b.closest("li").dataset.i]);
+          if (a && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+            e.preventDefault();
+            this.campos.palestrante.value = a.dataset.pessoa;
+            this.filtrar(true);
+            this.shadowRoot.querySelector(".pessoa").scrollIntoView({ block: "start" });
+          }
         };
         raiz.addEventListener("click", this.cliques);
       }
@@ -258,6 +289,7 @@
       for (const s of this.shadowRoot.querySelectorAll("section[data-dia]")) s.hidden = !s.querySelector("li:not([hidden])");
       this.shadowRoot.querySelector(".cont").textContent = this.t.contador(n);
       this.shadowRoot.querySelector(".vazio").hidden = n > 0;
+      this.mostrarPessoa(c.palestrante.value);
       if (!gravar) return;
       const q = new URLSearchParams(location.search);
       for (const [nome, campo] of Object.entries(c)) {
@@ -268,6 +300,21 @@
       try { // o Safari limita replaceState a ~100 chamadas em 30 s
         history.replaceState(history.state, "", `${location.pathname}${qs ? `?${qs}` : ""}${location.hash}`);
       } catch { /* o filtro vale, só não fica na URL */ }
+    }
+
+    // visão do palestrante: foto do site, dados, link, galeria do Flickr oficial com crédito e canal de remoção
+    mostrarPessoa(chave) {
+      const caixa = this.shadowRoot.querySelector(".pessoa"), p = this.pessoas.get(chave), t = this.t;
+      caixa.hidden = !p;
+      if (!p) return;
+      const fotos = this.fotos[String(p.id)] || [];
+      caixa.innerHTML = `${p.foto ? `<img class="rosto" src="${url(p.foto)}" alt="" width="96" height="96">` : ""}
+        <div><h2>${esc(p.nome)}</h2><p class="sem">${esc([p.organizacao, p.pais].filter(Boolean).join(" · "))}</p>
+        <p><a href="${url(p.url)}">${esc(t.paginaSite)}</a></p></div>${fotos.length ? `<h3>${esc(t.fotosEvento)}</h3>
+        <ul class="galeria">${fotos.map(f => `<li><a href="${url(f.url_pagina)}" target="_blank" rel="noopener"><img
+          src="${url(f.url_thumb)}" alt="${esc(t.fotoDe(p.nome))}" loading="lazy" width="150" height="150"></a>
+          <small>${esc(t.foto)}: ${esc(f.autor)}/Latinoware${f.licenca_nome ? ` · ${esc(f.licenca_nome)}` : ""}</small></li>`).join("")}</ul>` : ""}
+        <p class="sem">${esc(t.remover)} <a href="mailto:privacidade@ilove.the.br">privacidade@ilove.the.br</a></p>`;
     }
 
     limpar() {

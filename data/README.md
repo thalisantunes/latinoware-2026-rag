@@ -20,3 +20,9 @@ Exceção: `web/catalogo.json` (gerado por `07_exportar_catalogo.py`, `make cata
 repositório. Ele traz só metadados da grade (título, horário, espaço, palestrantes com link),
 um resumo curto de até 280 caracteres com link para o texto completo no site e o link para o
 instante da palestra na live. Sem bios, sem resumo completo e sem transcrição.
+
+Fotos dos palestrantes (`10_fotos.py`, `make fotos`): `data/fotos/` guarda as fotos de referência do site, as
+fotos médias do Flickr usadas no casamento e os vetores faciais (`data/fotos/embeddings/`, permissão 700).
+Vetor facial é dado biométrico (LGPD, art. 11): nunca vai para o git, o Weaviate ou a página, e é apagado com
+`make fotos-limpar` quando o casamento terminar. Só `web/fotos.json` é publicado, com os pares aprovados na
+revisão humana: miniatura e link da foto no Flickr oficial, autor e licença.
