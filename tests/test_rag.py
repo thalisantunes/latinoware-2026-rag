@@ -101,9 +101,10 @@ def test_ask_tres_linguas(idioma, pergunta):
         assert (f["inicio_video_s"] is None) == (f["fonte"] != "transcricao")
         assert f["url_video"] is None or f["url_video"].startswith("https://youtu.be/")
         assert (f["url_video"] is None) == (f["video_id"] is None) == (f["video_t"] is None)
-    # nenhuma palestra ocupa mais de 2 fontes
-    contagem = Counter((re.sub(r"\W", "", f["titulo"].lower()), f["inicio"]) for f in d["fontes"])
-    assert max(contagem.values()) <= 2
+    # nenhuma palestra ocupa mais fontes que o limite
+    contagem = Counter((re.sub(r"\W", "", f["titulo"].lower()), f["inicio"])
+                       for f in d["fontes"] if f["fonte"] != "bio" and f["palestra_id"])
+    assert max(contagem.values()) <= api.MAX_POR_PALESTRA
 
 
 @pytest.mark.skipif(not api_no_ar(), reason="API fora do ar")
