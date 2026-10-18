@@ -179,7 +179,7 @@
 
       let html = `<style>${CSS}</style>`;
       if (api) html += `<form class="ia" part="ia"><label>${esc(t.perguntaRotulo)}<textarea name="q" required minlength="3" maxlength="1000"></textarea></label>
-        <div class="linha"><span></span><button class="pri" type="submit">${esc(t.enviar)}</button></div><div class="out" role="status" aria-live="polite"></div></form>`;
+        <div class="linha"><span></span><button class="pri" type="submit">${esc(t.enviar)}</button></div><div class="out"></div></form>`;
       html += `<div class="filtros" part="filtros">
         <label class="busca">${esc(t.busca)}<input type="search" name="busca" placeholder="${esc(t.buscaPh)}"></label>
         <label>${esc(t.data)}<select name="data">${opcoes(d.evento.datas, dia)}</select></label>
@@ -297,19 +297,44 @@
       const pergunta = f.q.value.trim();
       if (pergunta.length < 3 || this.ocupado) return;
       this.ocupado = true;
-      out.innerHTML = `<p class="msg">${esc(t.aguarde)}</p>`;
+      out.innerHTML = `<p class="msg">${esc(t.aguarde)}</p><p class="resp"></p><div class="fts"></div>`;
+      const resp = out.querySelector(".resp"), fts = out.querySelector(".fts");
+      const listar = fontes => `<h2>${esc(t.fontes)}</h2><ol>${fontes.map(s => {
+        const link = s.url_video ? `<a href="${url(s.url_video)}" target="_blank" rel="noopener">▶ ${esc(t.video)} ${hms(+s.video_t || 0)}</a>`
+          : `<a href="${url(s.url)}">${esc(/^https?:\/\/([^/]+)/i.exec(s.url || "")?.[1] || s.url)}</a>`;
+        return `<li>${esc(s.titulo)}${s.palestrantes ? ` (${esc(s.palestrantes)})` : ""} · ${link}</li>`;
+      }).join("")}</ol>`;
+      const pedir = rota => fetch(`${this.getAttribute("api").replace(/\/$/, "")}${rota}`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pergunta, idioma: this.idioma }), signal: AbortSignal.timeout(90000) });
       try {
-        const r = await fetch(`${this.getAttribute("api").replace(/\/$/, "")}/ask`, {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ pergunta, idioma: this.idioma }), signal: AbortSignal.timeout(90000) });
+        let r = await pedir("/ask/stream"), d;
+        if (r.status === 404 || r.status === 405) r = await pedir("/ask"); // API sem streaming
         if (!r.ok) throw new Error(r.status === 429 ? "ocupado" : "erro");
-        const d = await r.json();
-        out.innerHTML = `<p class="resp" lang="${esc(d.idioma)}">${esc(d.resposta)}</p><h2>${esc(t.fontes)}</h2><ol>${
-          d.fontes.map(s => {
-            const link = s.url_video ? `<a href="${url(s.url_video)}" target="_blank" rel="noopener">▶ ${esc(t.video)} ${hms(+s.video_t || 0)}</a>`
-              : `<a href="${url(s.url)}">${esc(/^https?:\/\/([^/]+)/i.exec(s.url || "")?.[1] || s.url)}</a>`;
-            return `<li>${esc(s.titulo)}${s.palestrantes ? ` (${esc(s.palestrantes)})` : ""} · ${link}</li>`;
-          }).join("")}</ol>`;
+        if (r.headers.get("content-type")?.startsWith("text/event-stream")) {
+          // SSE: fontes chegam antes do texto, que vem em pedaços
+          const leitor = r.body.pipeThrough(new TextDecoderStream()).getReader();
+          let buf = "";
+          try { for (let fim = false; !fim;) {
+            const { value, done } = await leitor.read();
+            if (done) break;
+            buf += value.replace(/\r\n/g, "\n");
+            for (let i; (i = buf.indexOf("\n\n")) >= 0; buf = buf.slice(i + 2)) {
+              const b = buf.slice(0, i), ev = /^event: (.*)$/m.exec(b)?.[1], x = JSON.parse(/^data: (.*)$/m.exec(b)?.[1] || "{}");
+              if (ev === "fontes") fts.innerHTML = listar(x.fontes || []);
+              else if (ev === "token") resp.append(x.t);
+              else if (ev === "fim") { d = x; fim = true; }
+              else if (ev === "erro") throw new Error(x.status === 429 ? "ocupado" : "erro");
+            }
+          } } finally { leitor.cancel().catch(() => {}); }
+        } else {
+          d = await r.json();
+          fts.innerHTML = listar(d.fontes || []);
+        }
+        if (!d) throw new Error("erro");
+        out.querySelector(".msg").remove();
+        resp.lang = d.idioma || "";
+        resp.textContent = d.resposta;
       } catch (e) {
         const msg = e.name === "TimeoutError" ? t.demorou : e.message === "ocupado" ? t.ocupado : t.erro;
         out.innerHTML = `<p class="msg" role="alert">${esc(msg)}</p>`;
@@ -317,6 +342,7 @@
         this.ocupado = false;
       }
     }
+
   }
 
   if (!customElements.get("latinoware-catalogo")) customElements.define("latinoware-catalogo", LatinowareCatalogo);

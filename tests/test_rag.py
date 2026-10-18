@@ -126,3 +126,19 @@ def test_idioma_forcado():
     d = httpx.post(f"{API_URL}/ask", json={"pergunta": PERGUNTAS["pt"], "idioma": "en"}, timeout=300).json()
     assert d["idioma"] == "en"
     assert api.detectar_idioma(d["resposta"]) == "en"
+
+
+@pytest.mark.skipif(not api_no_ar(), reason="API fora do ar")
+def test_ask_stream():
+    eventos = []
+    with httpx.stream("POST", f"{API_URL}/ask/stream", json={"pergunta": PERGUNTAS["pt"]}, timeout=300) as r:
+        assert r.headers["content-type"].startswith("text/event-stream")
+        for linha in r.iter_lines():
+            if linha.startswith("event: "):
+                eventos.append(linha[7:])
+            elif linha.startswith("data: "):
+                ultimo = json.loads(linha[6:])
+    sem_tokens = [e for e in eventos if e != "token"]
+    assert sem_tokens == ["etapa", "fontes", "etapa", "fim"]
+    assert eventos.count("token") > 1
+    assert "home assistant" in ultimo["resposta"].lower()

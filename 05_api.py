@@ -1,4 +1,5 @@
 """Etapa 5: API da RAG. POST /ask {"pergunta": "...", "idioma": "pt|en|es" (opcional), "k": 8}
+POST /ask/stream: o mesmo corpo, resposta em SSE (eventos etapa, fontes, token, fim, erro).
 
 Fluxo: embute a pergunta (bge-m3) -> busca híbrida (BM25 + vetor) na coleção Trecho ->
 monta contexto numerado -> LLM responde no idioma da pergunta, citando [n].
@@ -20,7 +21,9 @@ import uvicorn
 import weaviate
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.background import BackgroundTask
 from pydantic import BaseModel, Field
 
 OLLAMA = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
@@ -106,20 +109,41 @@ async def embed(texto):
     return r.json()["embeddings"][0]
 
 
-async def gerar(sistema, usuario):
+async def pedacos(sistema, usuario):
+    """Texto da resposta em pedaços, à medida que o LLM gera."""
     mensagens = [{"role": "system", "content": sistema}, {"role": "user", "content": usuario}]
     if LLM_API_KEY:
-        r = await app.state.http.post(f"{LLM_BASE_URL}/chat/completions",
-                                      headers={"Authorization": f"Bearer {LLM_API_KEY}"},
-                                      json={"model": LLM_MODEL, "messages": mensagens, "temperature": 0.2,
-                                            "max_tokens": MAX_TOKENS})
+        async with app.state.http.stream("POST", f"{LLM_BASE_URL}/chat/completions",
+                                         headers={"Authorization": f"Bearer {LLM_API_KEY}"},
+                                         json={"model": LLM_MODEL, "messages": mensagens, "temperature": 0.2,
+                                               "max_tokens": MAX_TOKENS, "stream": True}) as r:
+            r.raise_for_status()
+            async for linha in r.aiter_lines():
+                if linha.startswith("data: ") and linha != "data: [DONE]":
+                    d = json.loads(linha[6:])
+                    if "error" in d:  # erro no meio do stream chega com HTTP 200
+                        raise RuntimeError(d["error"])
+                    escolhas = d.get("choices") or [{}]
+                    yield escolhas[0].get("delta", {}).get("content") or ""
+        return
+    async with app.state.http.stream("POST", f"{OLLAMA}/api/chat", json={
+            "model": LLM_MODEL, "messages": mensagens, "stream": True, "think": False,
+            "options": {"temperature": 0.2, "num_ctx": 16384, "num_predict": MAX_TOKENS}}) as r:
         r.raise_for_status()
-        return r.json()["choices"][0]["message"]["content"]
-    r = await app.state.http.post(f"{OLLAMA}/api/chat", json={
-        "model": LLM_MODEL, "messages": mensagens, "stream": False, "think": False,
-        "options": {"temperature": 0.2, "num_ctx": 16384, "num_predict": MAX_TOKENS}})
-    r.raise_for_status()
-    return r.json()["message"]["content"]
+        async for linha in r.aiter_lines():
+            if linha:
+                d = json.loads(linha)
+                if "error" in d:
+                    raise RuntimeError(d["error"])
+                yield d.get("message", {}).get("content", "")
+
+
+async def gerar(sistema, usuario):
+    return "".join([p async for p in pedacos(sistema, usuario)])
+
+
+def limpar(resposta):
+    return re.sub(r"<think>.*?</think>", "", resposta, flags=re.S).strip()
 
 
 def links(valor):
@@ -166,7 +190,8 @@ async def ask(q: Pergunta):
         return await responder(q)
 
 
-async def responder(q):
+async def preparar(q):
+    """Idioma, prompt (sistema, usuário) e fontes; a geração fica para quem chama."""
     idioma = q.idioma or detectar_idioma(q.pergunta)
     try:
         trechos = await asyncio.to_thread(buscar, q.pergunta, await embed(q.pergunta), q.k)
@@ -176,12 +201,7 @@ async def responder(q):
     contexto = "\n\n".join(
         f"[{i}] {t['palestra_titulo']} | {t['palestrantes']} | fonte: {t['fonte']}\n{t['texto']}"
         for i, t in enumerate(trechos, 1))
-    try:
-        resposta = await gerar(INSTRUCOES[idioma], f"Trechos:\n{contexto}\n\nPergunta: {q.pergunta}\n\n{LEMBRETE[idioma]}")
-        resposta = re.sub(r"<think>.*?</think>", "", resposta, flags=re.S).strip()
-    except Exception:
-        log.exception("falha no LLM")
-        raise HTTPException(503, "gerador de respostas indisponível") from None
+    prompt = (INSTRUCOES[idioma], f"Trechos:\n{contexto}\n\nPergunta: {q.pergunta}\n\n{LEMBRETE[idioma]}")
     # transcrições servem de contexto, mas não são devolvidas: só título, autor e link com tempo
     fontes = [{"n": i, "titulo": t["palestra_titulo"], "palestrantes": t["palestrantes"],
                "links_palestrantes": links(t.get("links_palestrantes")),
@@ -191,12 +211,72 @@ async def responder(q):
                "palestra_id": t["palestra_id"] or None,
                "inicio_video_s": t["inicio_video_s"] if t["video_id"] else None}
               for i, t in enumerate(trechos, 1)]
+    return idioma, prompt, fontes
+
+
+async def responder(q):
+    idioma, prompt, fontes = await preparar(q)
+    try:
+        resposta = limpar(await gerar(*prompt))
+    except Exception:
+        log.exception("falha no LLM")
+        raise HTTPException(503, "gerador de respostas indisponível") from None
     return {"resposta": resposta, "idioma": idioma, "fontes": fontes}
+
+
+def sse(evento, dados):
+    return f"event: {evento}\ndata: {json.dumps(dados, ensure_ascii=False)}\n\n"
+
+
+@app.post("/ask/stream")
+async def ask_stream(q: Pergunta):
+    if GERACOES.locked():
+        raise HTTPException(429, "muitas perguntas ao mesmo tempo; tente de novo em instantes")
+    # o corpo do stream só roda depois do handler: a vaga é tomada aqui, senão o 429 nunca dispara
+    await GERACOES.acquire()
+    vaga = [True]  # liberar() roda no fim do corpo e no background: só a primeira vez solta
+
+    def liberar():
+        if vaga:
+            vaga.pop()
+            GERACOES.release()
+
+    async def eventos():
+        try:
+            yield sse("etapa", {"etapa": "buscando"})
+            try:
+                idioma, prompt, fontes = await preparar(q)
+            except HTTPException as e:
+                yield sse("erro", {"status": e.status_code, "detalhe": e.detail})
+                return
+            yield sse("fontes", {"fontes": fontes, "idioma": idioma})
+            if not fontes:  # nada achado: não ocupa a GPU
+                yield sse("fim", {"resposta": "", "idioma": idioma})
+                return
+            yield sse("etapa", {"etapa": "escrevendo", "modelo": LLM_MODEL})
+            resposta = []
+            try:
+                async for p in pedacos(*prompt):
+                    if p:
+                        resposta.append(p)
+                        yield sse("token", {"t": p})
+            except Exception:
+                log.exception("falha no LLM")
+                yield sse("erro", {"status": 503, "detalhe": "gerador de respostas indisponível"})
+                return
+            yield sse("fim", {"resposta": limpar("".join(resposta)), "idioma": idioma})
+        finally:
+            liberar()
+
+    # sem buffer no caminho (proxy/túnel), para os tokens chegarem na hora
+    # background libera a vaga se o corpo nunca chegar a ser iterado
+    return StreamingResponse(eventos(), media_type="text/event-stream", background=BackgroundTask(liberar),
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @app.get("/health")
 def health():
-    return {"ok": app.state.wv.is_ready()}
+    return {"ok": app.state.wv.is_ready(), "modelo": LLM_MODEL, "reranker": None}
 
 
 # página, componente e catálogo; montado por último para não engolir /ask e /health
