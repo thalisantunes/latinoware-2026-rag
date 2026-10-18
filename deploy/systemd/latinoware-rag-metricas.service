@@ -1,0 +1,11 @@
+[Unit]
+Description=Linha semanal de uso da RAG Latinoware no STATUS.md
+
+[Service]
+Type=oneshot
+WorkingDirectory=@RAIZ@
+# as mesmas variáveis que o Makefile carrega
+EnvironmentFile=-@RAIZ@/.env
+ExecStart=@RAIZ@/.venv/bin/python @RAIZ@/12_metricas.py
+StandardOutput=append:@RAIZ@/STATUS.md
+StandardError=journal
