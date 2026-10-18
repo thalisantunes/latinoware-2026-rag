@@ -179,7 +179,7 @@
 
       let html = `<style>${CSS}</style>`;
       if (api) html += `<form class="ia" part="ia"><label>${esc(t.perguntaRotulo)}<textarea name="q" required minlength="3" maxlength="1000"></textarea></label>
-        <div class="linha"><span></span><button class="pri" type="submit">${esc(t.enviar)}</button></div><div class="out" role="status" aria-live="polite"></div></form>`;
+        <div class="linha"><span></span><button class="pri" type="submit">${esc(t.enviar)}</button></div><div class="out"></div></form>`;
       html += `<div class="filtros" part="filtros">
         <label class="busca">${esc(t.busca)}<input type="search" name="busca" placeholder="${esc(t.buscaPh)}"></label>
         <label>${esc(t.data)}<select name="data">${opcoes(d.evento.datas, dia)}</select></label>
@@ -315,10 +315,10 @@
           // SSE: fontes chegam antes do texto, que vem em pedaços
           const leitor = r.body.pipeThrough(new TextDecoderStream()).getReader();
           let buf = "";
-          for (let fim = false; !fim;) {
+          try { for (let fim = false; !fim;) {
             const { value, done } = await leitor.read();
             if (done) break;
-            buf += value;
+            buf += value.replace(/\r\n/g, "\n");
             for (let i; (i = buf.indexOf("\n\n")) >= 0; buf = buf.slice(i + 2)) {
               const b = buf.slice(0, i), ev = /^event: (.*)$/m.exec(b)?.[1], x = JSON.parse(/^data: (.*)$/m.exec(b)?.[1] || "{}");
               if (ev === "fontes") fts.innerHTML = listar(x.fontes || []);
@@ -326,7 +326,7 @@
               else if (ev === "fim") { d = x; fim = true; }
               else if (ev === "erro") throw new Error(x.status === 429 ? "ocupado" : "erro");
             }
-          }
+          } } finally { leitor.cancel().catch(() => {}); }
         } else {
           d = await r.json();
           fts.innerHTML = listar(d.fontes || []);

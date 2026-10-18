@@ -23,6 +23,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.background import BackgroundTask
 from pydantic import BaseModel, Field
 
 OLLAMA = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
@@ -119,7 +120,10 @@ async def pedacos(sistema, usuario):
             r.raise_for_status()
             async for linha in r.aiter_lines():
                 if linha.startswith("data: ") and linha != "data: [DONE]":
-                    escolhas = json.loads(linha[6:]).get("choices") or [{}]
+                    d = json.loads(linha[6:])
+                    if "error" in d:  # erro no meio do stream chega com HTTP 200
+                        raise RuntimeError(d["error"])
+                    escolhas = d.get("choices") or [{}]
                     yield escolhas[0].get("delta", {}).get("content") or ""
         return
     async with app.state.http.stream("POST", f"{OLLAMA}/api/chat", json={
@@ -128,7 +132,10 @@ async def pedacos(sistema, usuario):
         r.raise_for_status()
         async for linha in r.aiter_lines():
             if linha:
-                yield json.loads(linha).get("message", {}).get("content", "")
+                d = json.loads(linha)
+                if "error" in d:
+                    raise RuntimeError(d["error"])
+                yield d.get("message", {}).get("content", "")
 
 
 async def gerar(sistema, usuario):
@@ -225,9 +232,17 @@ def sse(evento, dados):
 async def ask_stream(q: Pergunta):
     if GERACOES.locked():
         raise HTTPException(429, "muitas perguntas ao mesmo tempo; tente de novo em instantes")
+    # o corpo do stream só roda depois do handler: a vaga é tomada aqui, senão o 429 nunca dispara
+    await GERACOES.acquire()
+    vaga = [True]  # liberar() roda no fim do corpo e no background: só a primeira vez solta
+
+    def liberar():
+        if vaga:
+            vaga.pop()
+            GERACOES.release()
 
     async def eventos():
-        async with GERACOES:
+        try:
             yield sse("etapa", {"etapa": "buscando"})
             try:
                 idioma, prompt, fontes = await preparar(q)
@@ -235,6 +250,9 @@ async def ask_stream(q: Pergunta):
                 yield sse("erro", {"status": e.status_code, "detalhe": e.detail})
                 return
             yield sse("fontes", {"fontes": fontes, "idioma": idioma})
+            if not fontes:  # nada achado: não ocupa a GPU
+                yield sse("fim", {"resposta": "", "idioma": idioma})
+                return
             yield sse("etapa", {"etapa": "escrevendo", "modelo": LLM_MODEL})
             resposta = []
             try:
@@ -247,9 +265,12 @@ async def ask_stream(q: Pergunta):
                 yield sse("erro", {"status": 503, "detalhe": "gerador de respostas indisponível"})
                 return
             yield sse("fim", {"resposta": limpar("".join(resposta)), "idioma": idioma})
+        finally:
+            liberar()
 
     # sem buffer no caminho (proxy/túnel), para os tokens chegarem na hora
-    return StreamingResponse(eventos(), media_type="text/event-stream",
+    # background libera a vaga se o corpo nunca chegar a ser iterado
+    return StreamingResponse(eventos(), media_type="text/event-stream", background=BackgroundTask(liberar),
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 

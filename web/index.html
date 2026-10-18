@@ -339,14 +339,18 @@
   async function* sse(r) {
     const leitor = r.body.pipeThrough(new TextDecoderStream()).getReader();
     let buf = "";
-    for (;;) {
-      const { value, done } = await leitor.read();
-      if (done) return;
-      buf += value;
-      for (let i; (i = buf.indexOf("\n\n")) >= 0; buf = buf.slice(i + 2)) {
-        const bloco = buf.slice(0, i), ev = /^event: (.*)$/m.exec(bloco)?.[1], dados = /^data: (.*)$/m.exec(bloco)?.[1];
-        if (ev && dados) yield [ev, JSON.parse(dados)];
+    try {
+      for (;;) {
+        const { value, done } = await leitor.read();
+        if (done) return;
+        buf += value.replace(/\r\n/g, "\n");
+        for (let i; (i = buf.indexOf("\n\n")) >= 0; buf = buf.slice(i + 2)) {
+          const bloco = buf.slice(0, i), ev = /^event: (.*)$/m.exec(bloco)?.[1], dados = /^data: (.*)$/m.exec(bloco)?.[1];
+          if (ev && dados) yield [ev, JSON.parse(dados)];
+        }
       }
+    } finally {
+      leitor.cancel().catch(() => {});  // break/erro no meio: fecha a conexão e libera a GPU no servidor
     }
   }
 
@@ -403,6 +407,7 @@
           else if (ev === "fim") d = x;
           else if (ev === "erro") { status = x.status; throw new Error(status); }
         }
+        if (!d && fontes.length) { status = undefined; throw new Error("rede"); }  // conexão caiu antes do fim
       }
       fontes = fontes.filter((f) => f && Number.isInteger(f.n));
       if (!fontes.length || typeof d?.resposta !== "string") { mostrar(t.vazio, el("div", { className: "estado vazio", textContent: t.vazio })); return; }
