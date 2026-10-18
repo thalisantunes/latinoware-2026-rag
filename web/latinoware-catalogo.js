@@ -14,7 +14,7 @@
       palestrante: "Palestrante", todos: "Todos", soVideo: "Só com vídeo", limpar: "Limpar filtros",
       contador: n => n === 1 ? "1 atividade" : `${n} atividades`, nenhum: "Nenhuma atividade com esses filtros.",
       carregando: "Carregando programação…", erroCarga: "Não foi possível carregar a programação.",
-      assistir: "Assistir no YouTube", estimado: "horário estimado", semGravacao: "Sem gravação",
+      assistir: "Assistir no YouTube", naLive: "na live", estimado: "horário estimado", semGravacao: "Sem gravação",
       noSite: "Resumo completo no site", perguntarIA: "Resumo com IA",
       pergunta: (t, p) => `Resuma a palestra "${t}"${p ? ` de ${p}` : ""}`,
       perguntaRotulo: "Pergunte sobre as palestras", enviar: "Perguntar", aguarde: "Buscando e escrevendo a resposta…",
@@ -29,7 +29,7 @@
       palestrante: "Speaker", todos: "All", soVideo: "Only with video", limpar: "Clear filters",
       contador: n => n === 1 ? "1 activity" : `${n} activities`, nenhum: "No activities match these filters.",
       carregando: "Loading schedule…", erroCarga: "Could not load the schedule.",
-      assistir: "Watch on YouTube", estimado: "estimated time", semGravacao: "No recording",
+      assistir: "Watch on YouTube", naLive: "in the livestream", estimado: "estimated time", semGravacao: "No recording",
       noSite: "Full abstract on the website", perguntarIA: "AI summary",
       pergunta: (t, p) => `Summarize the talk "${t}"${p ? ` by ${p}` : ""}`,
       perguntaRotulo: "Ask about the talks", enviar: "Ask", aguarde: "Searching and writing the answer…",
@@ -44,7 +44,7 @@
       palestrante: "Ponente", todos: "Todos", soVideo: "Solo con video", limpar: "Limpiar filtros",
       contador: n => n === 1 ? "1 actividad" : `${n} actividades`, nenhum: "Ninguna actividad con estos filtros.",
       carregando: "Cargando programación…", erroCarga: "No se pudo cargar la programación.",
-      assistir: "Ver en YouTube", estimado: "hora estimada", semGravacao: "Sin grabación",
+      assistir: "Ver en YouTube", naLive: "en la transmisión", estimado: "hora estimada", semGravacao: "Sin grabación",
       noSite: "Resumen completo en el sitio", perguntarIA: "Resumen con IA",
       pergunta: (t, p) => `Resume la charla "${t}"${p ? ` de ${p}` : ""}`,
       perguntaRotulo: "Pregunta sobre las charlas", enviar: "Preguntar", aguarde: "Buscando y escribiendo la respuesta…",
@@ -183,6 +183,7 @@
         g.espacos.push(p.espaco);
         g.uids.push(p.uid);
         if (p.url_video && (!g.video || g.video.alinhamento === "estimado")) g.video = p;
+        if (p.url_video_palestra && !g.individual) g.individual = p; // vídeo só da palestra, se o organizador publicou
       }
       for (const g of grupos.values()) {
         g.texto = norm([g.titulo, g.resumo_curto, g.trilha, ...g.espacos, ...g.palestrantes.map(s => s.nome)].join(" "));
@@ -233,7 +234,11 @@
           <p class="meta"><span>${esc(g.salas.join(" · "))}</span><span>${esc(fmtCurto.format(new Date(`${g.data}T12:00:00Z`)))}, ${esc(g.hora_inicio)}–${esc(g.hora_fim)}</span>
           <span class="chip">${esc(g.trilha)}</span></p>
           <p class="resumo">${esc(g.resumo_curto)} <a href="${url(g.url_site)}">${esc(t.noSite)}</a></p>
-          <div class="acoes">${v
+          <div class="acoes">${g.individual
+            ? `<a class="btn pri" href="${url(g.individual.url_video_palestra)}" target="_blank" rel="noopener" aria-describedby="${id}">▶ ${
+              esc(t.assistir)}</a>${v ? `<a href="${url(v.url_video)}" target="_blank" rel="noopener" aria-describedby="${id}">${
+              esc(t.naLive)} (${hms(v.t_inicio)})</a>${v.alinhamento === "estimado" ? `<span class="est">${esc(t.estimado)}</span>` : ""}` : ""}`
+            : v
             ? `<a class="btn pri" href="${url(v.url_video)}" target="_blank" rel="noopener" aria-describedby="${id}">▶ ${esc(t.assistir)} (${hms(v.t_inicio)})</a>${
               v.alinhamento === "estimado" ? `<span class="est">${esc(t.estimado)}</span>` : ""}`
             : `<span class="sem">${esc(t.semGravacao)}</span>`}${
@@ -284,7 +289,7 @@
         const g = this.grupos[li.dataset.i];
         const ok = busca.every(p => g.texto.includes(p)) && (!c.data.value || g.data === c.data.value)
           && (!c.espaco.value || g.salas.includes(c.espaco.value)) && (!c.trilha.value || g.trilha === c.trilha.value)
-          && (!c.palestrante.value || g.palestrantes.some(s => (s.url || s.nome) === c.palestrante.value)) && (!c.video.checked || !!g.video);
+          && (!c.palestrante.value || g.palestrantes.some(s => (s.url || s.nome) === c.palestrante.value)) && (!c.video.checked || !!(g.video || g.individual));
         li.hidden = !ok;
         n += ok;
       });

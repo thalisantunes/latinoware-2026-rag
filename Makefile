@@ -4,7 +4,7 @@ export
 
 PY = uv run python
 
-.PHONY: tudo weaviate coletar audio transcrever sincronizar indexar catalogo api testar avaliar benchmark fotos fotos-limpar
+.PHONY: tudo weaviate coletar audio transcrever sincronizar indexar catalogo api testar avaliar benchmark fotos fotos-limpar videos-individuais
 tudo: weaviate coletar audio transcrever sincronizar indexar catalogo
 
 weaviate:
@@ -52,3 +52,8 @@ fotos:
 # apaga os vetores faciais quando o casamento final terminar
 fotos-limpar:
 	$(FOTOS) limpar
+
+# vídeos individuais das palestras (uma URL por vez): ensaio com make videos-individuais PLAYLIST="<url>";
+# grava com GRAVAR=1
+videos-individuais:
+	$(PY) 11_videos_palestras.py "$(PLAYLIST)" $(if $(GRAVAR),--gravar)

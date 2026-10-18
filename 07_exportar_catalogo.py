@@ -47,6 +47,8 @@ def main():
     duracao = {v["id"]: v["duracao"] for v in videos}
     # foto pública de cada palestrante no site (10_fotos.py referencias); o componente faz hotlink
     fotos = indexar.carregar_json(data / "fotos" / "referencias.json", {})
+    # vídeo individual de cada palestra (11_videos_palestras.py --gravar), quando o organizador publicar
+    individuais = indexar.carregar_json(data / "videos_palestras.json", {})
     transcritos = {v["id"] for v in videos if (data / "transcricoes" / f"{v['id']}.json").exists()}
     if len(transcritos) < len(videos):
         # sem transcrição não dá para saber se a live transmitiu o áudio de cada palestra
@@ -66,6 +68,8 @@ def main():
             "video_id": a.get("video_id"), "t_inicio": a.get("t_inicio"), "t_fim": a.get("t_fim"),
             "url_video": a.get("url_video"), "alinhamento": a.get("alinhamento"),
             "transcrito": a.get("video_id") in transcritos,
+            "video_palestra": (vp := individuais.get(indexar.uid(p), {}).get("video_id")),
+            "url_video_palestra": f"https://youtu.be/{vp}" if vp else None,
         })
 
     # a grade às vezes aponta para outra URL da mesma pessoa (slug do nome x swge-<hash>)
