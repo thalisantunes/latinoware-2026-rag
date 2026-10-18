@@ -89,11 +89,13 @@ def live_do_espaco(v, palestras, videos, manual):
     return do_dia, *inicio_da_live(v, do_dia, manual, lives_no_dia)
 
 
-def alinhar_palestras(palestras, videos, manual):
+def alinhar_palestras(palestras, videos, manual, inicios=True):
     """{uid: video_id, t_inicio, t_fim, alinhamento, url_video} das palestras que caem dentro de uma live.
 
     Com transcrição, exige MIN_FALA palavras por minuto na janela: keynotes da grade repetem em todas as salas,
     mas só algumas lives transmitiram o áudio; nas outras o trecho é silêncio ou música.
+    A grade atrasa: com inicios=True, o instante vem de alinhamento.json ("<uid>": segundos, correção
+    manual) ou de data/inicios.json (08_sincronizar_inicio.py, lido da transcrição), quando houver.
     """
     alinhadas = {}
     for v in videos:
@@ -113,6 +115,17 @@ def alinhar_palestras(palestras, videos, manual):
             if fala and fim > ini and (not anterior or fim - ini > anterior["t_fim"] - anterior["t_inicio"]):
                 alinhadas[uid(p)] = {"video_id": v["id"], "t_inicio": ini, "t_fim": fim,
                                      "alinhamento": fonte, "url_video": url_video(v["id"], ini)}
+    if inicios:
+        lidos = carregar_json(DATA / "inicios.json", {})
+        for u, a in alinhadas.items():
+            if isinstance(manual.get(u), int):
+                t, como = manual[u], "manual"
+            elif lidos.get(u, {}).get("video_id") == a["video_id"]:
+                t, como = lidos[u]["t"], "transcricao"
+            else:
+                continue
+            if 0 <= t < a["t_fim"]:
+                a.update(t_inicio=t, alinhamento=como, url_video=url_video(a["video_id"], t))
     return alinhadas
 
 

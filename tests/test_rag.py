@@ -152,3 +152,24 @@ def test_trecho_fora_da_grade():
     assert re.search(r"\b\d:\d{2}:\d{2}\b", d["resposta"])
     assert "paraguai" in d["resposta"].lower()
     assert "fora da grade" not in d["resposta"].lower()
+
+
+def test_inicio_lido_e_manual(tmp_path, monkeypatch):
+    # a grade diz 10:00 (t=3600); a transcrição mostra o início real em t=3800; o manual vence os dois
+    monkeypatch.setattr(indexar, "DATA", tmp_path)
+    palestras = [{"id": "p", "espaco": "Espaço Brasil", "inicio": "2026-10-14T10:00:00-03:00",
+                  "fim": "2026-10-14T10:50:00-03:00"}]
+    videos = [{"id": "abc", "espaco": "Espaço Brasil", "data": "2026-10-14", "duracao": 4 * 3600,
+               "inicio_live": 1791979200}]
+    (tmp_path / "inicios.json").write_text(json.dumps({"p@brasil": {"video_id": "abc", "t": 3800}}))
+    a = indexar.alinhar_palestras(palestras, videos, {})["p@brasil"]
+    assert (a["t_inicio"], a["alinhamento"], a["url_video"]) == (3800, "transcricao", "https://youtu.be/abc?t=3800")
+    assert indexar.alinhar_palestras(palestras, videos, {}, inicios=False)["p@brasil"]["t_inicio"] == 3600
+    assert indexar.alinhar_palestras(palestras, videos, {"p@brasil": 3700})["p@brasil"]["t_inicio"] == 3700
+
+
+def test_primeira_fala():
+    sinc = modulo("08_sincronizar_inicio.py")
+    segs = [{"inicio": 100, "texto": "x"}, {"inicio": 400, "texto": "y"}]
+    assert sinc.primeira_fala(segs, 200) == 400      # grade em silêncio: primeira fala depois
+    assert sinc.primeira_fala(segs, 90) is None      # grade já com fala: fica a grade

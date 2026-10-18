@@ -4,8 +4,8 @@ export
 
 PY = uv run python
 
-.PHONY: tudo weaviate coletar audio transcrever indexar catalogo api testar avaliar
-tudo: weaviate coletar audio transcrever indexar catalogo
+.PHONY: tudo weaviate coletar audio transcrever sincronizar indexar catalogo api testar avaliar
+tudo: weaviate coletar audio transcrever sincronizar indexar catalogo
 
 weaviate:
 	docker compose up -d
@@ -18,6 +18,9 @@ audio:
 
 transcrever:
 	$(PY) 03_transcrever.py
+
+sincronizar:
+	$(PY) 08_sincronizar_inicio.py
 
 indexar:
 	$(PY) 04_indexar.py
