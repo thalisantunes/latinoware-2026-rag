@@ -274,9 +274,9 @@
   const chaveFonte = (f) => f.fonte === "bio" ? `bio|${f.url}` : `${normal(f.titulo)}|${f.inicio}`;
   // vídeo da palestra pelo catálogo: o resumo de uma keynote pode ser de uma sala sem transmissão
   let videos = null;
-  const catalogo = fetch("./catalogo.json").then((r) => r.json()).then((c) => {
+  const catalogo = fetch("./catalogo.json", { signal: AbortSignal.timeout(10000) }).then((r) => r.json()).then((c) => {
     videos = new Map(c.palestras.filter((p) => p.url_video).map((p) => [`${normal(p.titulo)}|${p.data}T${p.hora_inicio}`, p]));
-  }).catch(() => { videos = new Map(); });
+  }).catch(() => {}); // sem catálogo: sem fallback e sem "Sem gravação" (não dá para saber)
 
   // uma entrada por palestra; cada fonte vira um chip [n] com id="fonte-n" (alvo das citações)
   function palestra(grupo, t) {
@@ -296,8 +296,8 @@
       const a = link("", video ? f.url_video : f.url);
       a.className = "chip"; a.id = `fonte-${f.n}`;
       a.replaceChildren(el("b", { textContent: `[${f.n}]` }), video ? `▶ ${t.tipo.transcricao} ${hms(f.video_t)}` : t.tipo[f.fonte] || f.fonte);
-      if (video && f.alinhamento === "estimado") a.title = t.estimado;
       chips.append(a);
+      if (video && f.alinhamento === "estimado") chips.append(el("span", { className: "sem", textContent: `(${t.estimado})` }));
     }
     const p = f0.fonte !== "bio" && videos?.get(`${normal(f0.titulo)}|${(f0.inicio || "").slice(0, 16)}`);
     const comVideo = grupo.find((f) => f.fonte !== "transcricao" && seguro(f.url_video) && Number.isInteger(f.video_t))
@@ -368,6 +368,7 @@
   });
   document.addEventListener("perguntar", (e) => {
     e.preventDefault();
+    if (ocupado) return; // não troca o texto de uma pergunta em andamento
     $("q").value = e.detail.pergunta;
     $("f").scrollIntoView({ block: "start" });
     perguntar(e.detail.pergunta);
