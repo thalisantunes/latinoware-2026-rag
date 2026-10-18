@@ -272,3 +272,23 @@ def test_video_indisponivel_nao_vira_link():
     videos = [{"id": "bloqueado", "espaco": "Espaço Iguaçu", "data": "2026-10-16", "duracao": 4 * 3600,
                "inicio_live": 1792152000, "audio": False, "indisponivel": True}]
     assert indexar.alinhar_palestras(palestras, videos, {}, inicios=False) == {}
+
+
+def test_resumo_de_metricas():
+    eventos = [{"idioma": "pt", "status": 200, "cache": False, "sem_resposta": False, "resumo": False, "ms": 4000},
+               {"idioma": "pt", "status": 200, "cache": True, "sem_resposta": False, "resumo": False, "ms": 100},
+               {"idioma": "en", "status": 429, "cache": False, "sem_resposta": False, "resumo": False, "ms": 5},
+               {"idioma": "es", "status": 200, "cache": False, "sem_resposta": True, "resumo": True, "ms": 6000}]
+    r = api.resumo(eventos)
+    assert r["perguntas"] == 4 and r["idiomas"] == {"pt": 2, "en": 1, "es": 1}
+    assert (r["reaproveitadas"], r["sem_resposta"], r["ocupado_429"], r["resumos"], r["erros"]) == (1, 1, 1, 1, 0)
+    assert (r["p50_s"], r["p95_s"]) == (4.0, 4.0)  # só quem gerou (cache fica fora do tempo)
+
+
+@pytest.mark.skipif(not api_no_ar(), reason="API fora do ar")
+def test_stats_conta_pergunta_sem_guardar_texto():
+    antes = httpx.get(f"{API_URL}/stats", params={"dias": 1}).json()["total"]["perguntas"]
+    httpx.post(f"{API_URL}/ask", json={"pergunta": PERGUNTAS["en"]}, timeout=300)
+    depois = httpx.get(f"{API_URL}/stats", params={"dias": 1}).json()
+    assert depois["total"]["perguntas"] == antes + 1
+    assert PERGUNTAS["en"] not in json.dumps(depois)

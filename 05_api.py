@@ -14,6 +14,8 @@ import logging
 import os
 import re
 import threading
+import time
+from collections import Counter
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -23,7 +25,7 @@ import uvicorn
 import weaviate
 from weaviate.classes.config import Configure, DataType, Property, Tokenization
 from weaviate.classes.query import Filter, MetadataQuery, Sort
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -51,6 +53,9 @@ _reranker, _trava_reranker = None, threading.Lock()  # _reranker = False: a carg
 CACHE_DIST = float(os.environ.get("CACHE_DIST", 0.05))
 RETENCAO_DIAS = int(os.environ.get("RETENCAO_DIAS", 90))
 SEM_PALESTRA = "-"  # pergunta geral (não é "Resumo com IA" de uma palestra)
+# métricas de uso: uma linha por pergunta em data/metricas/AAAA-MM-DD.jsonl, sem texto da pergunta nem IP
+METRICAS = Path(__file__).parent / "data" / "metricas"
+_trava_metricas = threading.Lock()
 ARQ_VERSAO = Path(__file__).parent / "data" / "versao_indice.txt"
 
 
@@ -326,12 +331,22 @@ async def ja_respondida(q):
 
 @app.post("/ask")
 async def ask(q: Pergunta):
-    if guardada := await ja_respondida(q):
-        return guardada
-    if GERACOES.locked():
-        raise HTTPException(429, "muitas perguntas ao mesmo tempo; tente de novo em instantes")
-    async with GERACOES:
-        return await responder(q)
+    inicio, status, cache, vazio = time.monotonic(), 500, False, False
+    try:
+        if guardada := await ja_respondida(q):
+            status, cache, vazio = 200, True, not guardada["fontes"]
+            return guardada
+        if GERACOES.locked():
+            raise HTTPException(429, "muitas perguntas ao mesmo tempo; tente de novo em instantes")
+        async with GERACOES:
+            r = await responder(q)
+        status, cache, vazio = 200, r.get("reaproveitada", False), not r["fontes"]
+        return r
+    except HTTPException as e:
+        status = e.status_code
+        raise
+    finally:
+        registrar("ask", q, inicio, status, cache, vazio)
 
 
 def preparar_historico(wv):
@@ -348,8 +363,35 @@ def preparar_historico(wv):
         Property(name="criado_em", data_type=DataType.DATE), Property(name="reutilizacoes", data_type=DataType.INT)])
 
 
+def registrar(rota, q, inicio, status, cache=False, sem_resposta=False):
+    """Métrica anônima de uma pergunta: rota, idioma, status, cache, sem resposta, resumo e duração."""
+    ev = {"ts": datetime.now(timezone.utc).isoformat(timespec="seconds"), "rota": rota,
+          "idioma": q.idioma or detectar_idioma(q.pergunta), "status": status, "cache": cache,
+          "sem_resposta": sem_resposta, "resumo": bool(q.palestra_id), "ms": round((time.monotonic() - inicio) * 1000)}
+    try:
+        with _trava_metricas:
+            METRICAS.mkdir(parents=True, exist_ok=True)
+            with open(METRICAS / f"{ev['ts'][:10]}.jsonl", "a") as arq:
+                arq.write(json.dumps(ev) + "\n")
+    except Exception:
+        log.exception("falha ao registrar métrica")
+
+
+def resumo(eventos):
+    ok = sorted(e["ms"] for e in eventos if e["status"] == 200 and not e["cache"])  # tempo de quem gerou
+    pct = lambda p: round(ok[int(p * (len(ok) - 1))] / 1000, 1) if ok else None  # noqa: E731
+    return {"perguntas": len(eventos), "idiomas": dict(Counter(e["idioma"] for e in eventos)),
+            "reaproveitadas": sum(e["cache"] for e in eventos), "resumos": sum(e["resumo"] for e in eventos),
+            "sem_resposta": sum(e["sem_resposta"] for e in eventos),
+            "ocupado_429": sum(e["status"] == 429 for e in eventos),
+            "erros": sum(e["status"] >= 500 for e in eventos), "p50_s": pct(0.5), "p95_s": pct(0.95)}
+
+
 def expurgar():
     limite = datetime.now(timezone.utc) - timedelta(days=RETENCAO_DIAS)
+    for arq in METRICAS.glob("*.jsonl") if METRICAS.exists() else []:
+        if arq.stem < limite.date().isoformat():
+            arq.unlink()
     r = app.state.wv.collections.get("Pergunta").data.delete_many(where=Filter.by_property("criado_em").less_than(limite))
     if r.successful:
         log.info(f"histórico: {r.successful} perguntas com mais de {RETENCAO_DIAS} dias apagadas")
@@ -495,13 +537,16 @@ def sse(evento, dados):
 
 @app.post("/ask/stream")
 async def ask_stream(q: Pergunta):
+    inicio = time.monotonic()
     if guardada := await ja_respondida(q):
+        registrar("stream", q, inicio, 200, cache=True, sem_resposta=not guardada["fontes"])
         async def reaproveitar():
             yield sse("etapa", {"etapa": "reaproveitando"})
             yield sse("fontes", {"fontes": guardada["fontes"], "idioma": guardada["idioma"]})
             yield sse("fim", guardada)
         return StreamingResponse(reaproveitar(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
     if GERACOES.locked():
+        registrar("stream", q, inicio, 429)
         raise HTTPException(429, "muitas perguntas ao mesmo tempo; tente de novo em instantes")
     # o corpo do stream só roda depois do handler: a vaga é tomada aqui, senão o 429 nunca dispara
     await GERACOES.acquire()
@@ -513,6 +558,7 @@ async def ask_stream(q: Pergunta):
             GERACOES.release()
 
     async def eventos():
+        m = {"status": 500, "cache": False, "sem_resposta": False}  # vira 200 ao chegar ao fim
         try:
             yield sse("etapa", {"etapa": "buscando"})
             try:
@@ -520,6 +566,7 @@ async def ask_stream(q: Pergunta):
                     if tipo == "etapa":
                         yield sse("etapa", {"etapa": valor})
                     elif tipo == "cache":  # pergunta igual já respondida: sem GPU
+                        m.update(status=200, cache=True, sem_resposta=not valor["fontes"])
                         yield sse("etapa", {"etapa": "reaproveitando"})
                         yield sse("fontes", {"fontes": valor["fontes"], "idioma": valor["idioma"]})
                         yield sse("fim", valor)
@@ -527,10 +574,12 @@ async def ask_stream(q: Pergunta):
                     else:
                         idioma, prompt, fontes, vetor = valor
             except HTTPException as e:
+                m["status"] = e.status_code
                 yield sse("erro", {"status": e.status_code, "detalhe": e.detail})
                 return
             yield sse("fontes", {"fontes": fontes, "idioma": idioma})
             if not fontes:  # nada achado: não ocupa a GPU
+                m.update(status=200, sem_resposta=True)
                 yield sse("fim", {"resposta": "", "idioma": idioma})
                 return
             yield sse("etapa", {"etapa": "escrevendo", "modelo": LLM_MODEL})
@@ -542,18 +591,35 @@ async def ask_stream(q: Pergunta):
                         yield sse("token", {"t": p})
             except Exception:
                 log.exception("falha no LLM")
+                m["status"] = 503
                 yield sse("erro", {"status": 503, "detalhe": "gerador de respostas indisponível"})
                 return
+            m["status"] = 200
             texto = limpar("".join(resposta))
             await lembrar(q, idioma, vetor, texto, fontes)
             yield sse("fim", {"resposta": texto, "idioma": idioma, "reaproveitada": False})
         finally:
             liberar()
+            registrar("stream", q, inicio, m["status"], m["cache"], m["sem_resposta"])
 
     # sem buffer no caminho (proxy/túnel), para os tokens chegarem na hora
     # background libera a vaga se o corpo nunca chegar a ser iterado
     return StreamingResponse(eventos(), media_type="text/event-stream", background=BackgroundTask(liberar),
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.get("/stats")
+def stats(dias: int = Query(7, ge=1, le=90)):
+    """Uso por dia nos últimos `dias` (UTC): perguntas, idiomas, reaproveitadas, sem resposta, 429, erros, p50/p95."""
+    hoje = datetime.now(timezone.utc).date()
+    por_dia, todos = [], []
+    for i in range(dias - 1, -1, -1):
+        dia = (hoje - timedelta(days=i)).isoformat()
+        arq = METRICAS / f"{dia}.jsonl"
+        eventos = [json.loads(linha) for linha in arq.read_text().splitlines() if linha] if arq.exists() else []
+        todos += eventos
+        por_dia.append({"dia": dia} | resumo(eventos))
+    return {"dias": por_dia, "total": resumo(todos)}
 
 
 @app.get("/frequentes")
