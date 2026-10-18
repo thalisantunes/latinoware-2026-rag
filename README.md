@@ -59,7 +59,8 @@ Design decisions:
   (`data/frequentes_aprovadas.json`), since the text typed by visitors becomes public.
 - **Usage metrics**: `GET /stats?dias=7` returns anonymous daily counts (Brasília days) (language, reused answers, no-answer, 429,
   errors, p50/p95), one line per question in `data/metricas/` without the question text or IP, kept 90 days;
-  `make metricas` appends the weekly line to `STATUS.md`.
+  `make metricas` appends the weekly line to `STATUS.md`, and `make instalar-timer` schedules it every Monday at
+  08:00 (systemd user timer, templates in `deploy/systemd/`).
 
 ### Requirements
 
@@ -263,7 +264,8 @@ Decisiones:
   (`data/frequentes_aprovadas.json`), porque el texto que escriben los visitantes se vuelve público.
 - **Métricas de uso**: `GET /stats?dias=7` devuelve conteos diarios anónimos (días de Brasilia) (idioma, respuestas reutilizadas, sin
   respuesta, 429, errores, p50/p95), una línea por pregunta en `data/metricas/` sin el texto ni la IP, guardadas
-  90 días; `make metricas` agrega la línea semanal al `STATUS.md`.
+  90 días; `make metricas` agrega la línea semanal al `STATUS.md`, y `make instalar-timer` la programa cada lunes a las
+  08:00 (timer de systemd del usuario, plantillas en `deploy/systemd/`).
 
 ### Requisitos
 
@@ -466,7 +468,8 @@ Decisões:
   (`data/frequentes_aprovadas.json`), porque o texto digitado pelos visitantes fica público.
 - **Métricas de uso**: `GET /stats?dias=7` devolve contagens diárias anônimas (dias de Brasília) (idioma, respostas reaproveitadas, sem
   resposta, 429, erros, p50/p95), uma linha por pergunta em `data/metricas/` sem o texto nem o IP, guardadas 90
-  dias; `make metricas` acrescenta a linha semanal ao `STATUS.md`.
+  dias; `make metricas` acrescenta a linha semanal ao `STATUS.md`, e `make instalar-timer` a agenda toda segunda às
+  08:00 (timer systemd do usuário, modelos em `deploy/systemd/`).
 
 ### Requisitos
 

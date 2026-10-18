@@ -1,0 +1,9 @@
+[Unit]
+Description=Linha semanal de uso da RAG Latinoware no STATUS.md
+
+[Service]
+Type=oneshot
+WorkingDirectory=@RAIZ@
+ExecStart=@RAIZ@/.venv/bin/python @RAIZ@/12_metricas.py
+StandardOutput=append:@RAIZ@/STATUS.md
+StandardError=journal

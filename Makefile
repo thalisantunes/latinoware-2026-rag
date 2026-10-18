@@ -4,7 +4,7 @@ export
 
 PY = uv run python
 
-.PHONY: tudo weaviate coletar audio transcrever sincronizar indexar catalogo api testar avaliar benchmark fotos fotos-limpar videos-individuais novos-videos metricas gabarito-candidatos
+.PHONY: tudo weaviate coletar audio transcrever sincronizar indexar catalogo api testar avaliar benchmark fotos fotos-limpar videos-individuais novos-videos metricas gabarito-candidatos instalar-timer
 # catalogo antes de indexar: não depende do índice e fica pronto mesmo se a avaliação da busca falhar
 tudo: weaviate coletar audio transcrever sincronizar catalogo indexar
 
@@ -76,3 +76,12 @@ novos-videos:
 metricas:
 	$(PY) 12_metricas.py >> STATUS.md
 	tail -1 STATUS.md
+
+# timer systemd --user que roda `make metricas` toda segunda às 08:00 (deploy/systemd, caminho preenchido aqui)
+UNITS = $(HOME)/.config/systemd/user
+instalar-timer:
+	mkdir -p $(UNITS)
+	for f in deploy/systemd/latinoware-rag-metricas.*; do sed 's#@RAIZ@#$(CURDIR)#g' $$f > $(UNITS)/$$(basename $$f); done
+	systemctl --user daemon-reload
+	systemctl --user enable --now latinoware-rag-metricas.timer
+	systemctl --user list-timers latinoware-rag-metricas.timer --no-pager
