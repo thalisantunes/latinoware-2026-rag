@@ -59,7 +59,8 @@ Design decisions:
   CTranslate2. Without it: `uv pip install nvidia-cublas-cu12` and point `LD_LIBRARY_PATH` to
   `.venv/lib/python3.12/site-packages/nvidia/cublas/lib`. cuDNN was not needed in our tests.
 - Docker with Compose (Weaviate), [Ollama](https://ollama.com) and [uv](https://docs.astral.sh/uv/).
-- Node.js on PATH (yt-dlp uses it for YouTube) and ffmpeg.
+- ffmpeg. yt-dlp needs a JavaScript runtime for YouTube: `uv sync` installs Deno in `.venv`
+  (Node.js works too, if it is 22 or newer).
 - Disk: ~10 GB for audio (122 h of lives) and a few GB for models.
 
 ```bash
@@ -132,12 +133,14 @@ nginx).
 #### YouTube asking for sign-in
 
 From some IPs YouTube answers "Sign in to confirm you're not a bot" and yt-dlp downloads
-nothing. yt-dlp accepts a `cookies.txt` (Netscape format) exported from a logged-in browser.
+nothing. yt-dlp can read the cookies of a logged-in browser on the same machine
+(`YTDLP_COOKIES_BROWSER=chrome`, or `chrome:Profile`, `firefox`...; close YouTube tabs first, or
+YouTube rotates the cookies) or a `cookies.txt` (Netscape format) in `YTDLP_COOKIES`.
 Downloading videos may breach YouTube's Terms of Service and an account used this way may be
 blocked: weigh it, and do it at your own risk.
 
 ```bash
-YTDLP_COOKIES=/path/cookies.txt make audio
+YTDLP_COOKIES_BROWSER=chrome make audio
 ```
 
 Without cookies, `02_baixar_audio.py` saves only the lives' metadata, and the RAG works from
@@ -232,7 +235,8 @@ Decisiones:
   de faster-whisper. Sin él: `uv pip install nvidia-cublas-cu12` y apunta `LD_LIBRARY_PATH` a
   `.venv/lib/python3.12/site-packages/nvidia/cublas/lib`. En las pruebas no hizo falta cuDNN.
 - Docker con Compose (Weaviate), [Ollama](https://ollama.com) y [uv](https://docs.astral.sh/uv/).
-- Node.js en el PATH (yt-dlp lo usa para YouTube) y ffmpeg.
+- ffmpeg. yt-dlp necesita un runtime JavaScript para YouTube: `uv sync` instala Deno en `.venv`
+  (Node.js también sirve, si es 22 o más nuevo).
 - Disco: ~10 GB para los audios (122 h de lives) y algunos GB para modelos.
 
 ```bash
@@ -305,12 +309,13 @@ nginx).
 #### YouTube pidiendo inicio de sesión
 
 Desde algunas IPs YouTube responde "Sign in to confirm you're not a bot" y yt-dlp no descarga
-nada. yt-dlp acepta un `cookies.txt` (formato Netscape) exportado de un navegador con sesión
-iniciada. Descargar videos puede contrariar los Términos de Servicio de YouTube y una cuenta
+nada. yt-dlp puede leer las cookies de un navegador con sesión iniciada en la misma máquina
+(`YTDLP_COOKIES_BROWSER=chrome`, o `chrome:Perfil`, `firefox`...; cierra antes las pestañas de
+YouTube, o YouTube rota las cookies) o un `cookies.txt` (formato Netscape) en `YTDLP_COOKIES`. Descargar videos puede contrariar los Términos de Servicio de YouTube y una cuenta
 usada así puede ser bloqueada: evalúalo, y hazlo bajo tu propio riesgo.
 
 ```bash
-YTDLP_COOKIES=/ruta/cookies.txt make audio
+YTDLP_COOKIES_BROWSER=chrome make audio
 ```
 
 Sin cookies, `02_baixar_audio.py` guarda solo los metadatos de las lives, y la RAG funciona con
@@ -404,7 +409,8 @@ Decisões:
   faster-whisper. Sem ele: `uv pip install nvidia-cublas-cu12` e aponte `LD_LIBRARY_PATH` para
   `.venv/lib/python3.12/site-packages/nvidia/cublas/lib`. Nos testes, o cuDNN não foi necessário.
 - Docker com Compose (Weaviate), [Ollama](https://ollama.com) e [uv](https://docs.astral.sh/uv/).
-- Node.js no PATH (o yt-dlp usa para o YouTube) e ffmpeg.
+- ffmpeg. O yt-dlp precisa de um runtime JavaScript para o YouTube: o `uv sync` instala o Deno
+  no `.venv` (Node.js também serve, se for 22 ou mais novo).
 - Disco: ~10 GB para os áudios (122 h de lives) e alguns GB para modelos.
 
 ```bash
@@ -476,12 +482,14 @@ disso. Exposta na internet, ponha também um limite por IP no proxy (Cloudflare,
 #### YouTube pedindo login
 
 Em alguns IPs o YouTube responde "Sign in to confirm you're not a bot" e o yt-dlp não baixa
-nada. O yt-dlp aceita um `cookies.txt` (formato Netscape) exportado de um navegador logado.
+nada. O yt-dlp lê os cookies de um navegador logado na mesma máquina
+(`YTDLP_COOKIES_BROWSER=chrome`, ou `chrome:Perfil`, `firefox`...; feche antes as abas do
+YouTube, senão ele troca os cookies) ou um `cookies.txt` (formato Netscape) em `YTDLP_COOKIES`.
 Baixar vídeos pode contrariar os Termos de Serviço do YouTube e uma conta usada assim pode ser
 bloqueada: avalie, e faça por sua conta e risco.
 
 ```bash
-YTDLP_COOKIES=/caminho/cookies.txt make audio
+YTDLP_COOKIES_BROWSER=chrome make audio
 ```
 
 Sem cookies, `02_baixar_audio.py` salva só os metadados das lives, e a RAG funciona com os

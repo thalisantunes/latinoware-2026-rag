@@ -8,6 +8,8 @@ dependencies = [
     "httpx==0.28.1",
     "beautifulsoup4==4.15.0",
     "yt-dlp[default]==2026.8.19",
+    "deno==2.9.7",  # runtime JS do yt-dlp para o desafio do YouTube (o Node precisa ser 22+)
+    "secretstorage==3.5.0",  # lê os cookies do Chrome/Chromium no Linux
     "faster-whisper==1.2.1",
     "av==15.1.0",  # o av 16+ removeu um parâmetro usado pelo faster-whisper 1.2.1
     "weaviate-client==4.23.1",

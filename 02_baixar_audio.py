@@ -6,8 +6,9 @@ Itaipu Parquetec com títulos "Latinoware 2026 - Espaço <Sala> - DD/10".
 Saída: data/videos.json (metadados) e data/audio/<id>.m4a.
 
 O YouTube pode pedir login ("Sign in to confirm you're not a bot") conforme o IP.
-Nesse caso, exporte um cookies.txt (formato Netscape) e rode com
-YTDLP_COOKIES=/caminho/cookies.txt. Sem cookies, o script grava só os metadados.
+Nesse caso, rode com YTDLP_COOKIES_BROWSER=chrome (ou chrome:Perfil, firefox...), que lê os
+cookies direto do navegador, ou com YTDLP_COOKIES=/caminho/cookies.txt (formato Netscape).
+Sem cookies, o script grava só os metadados.
 """
 
 import json
@@ -29,6 +30,8 @@ TITULO = re.compile(r"Latinoware 2026 - Espaço (?P<espaco>.+?) - (?P<dia>\d{2})
 
 
 def cookies():
+    if b := os.environ.get("YTDLP_COOKIES_BROWSER"):
+        return ["--cookies-from-browser", b]
     c = os.environ.get("YTDLP_COOKIES")
     return ["--cookies", c] if c else []
 
@@ -97,8 +100,8 @@ def main():
         (DATA / "videos.json").write_text(json.dumps(videos, ensure_ascii=False, indent=1))
 
     print(f"áudios em disco: {sum(v['audio'] for v in videos)}/{len(videos)}; erros: {erros}")
-    if erros and not os.environ.get("YTDLP_COOKIES"):
-        print("dica: o YouTube pode estar pedindo login; veja YTDLP_COOKIES no README")
+    if erros and not cookies():
+        print("dica: o YouTube pode estar pedindo login; veja YTDLP_COOKIES_BROWSER no README")
 
 
 if __name__ == "__main__":
