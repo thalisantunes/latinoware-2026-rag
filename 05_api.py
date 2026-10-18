@@ -20,7 +20,7 @@ import uvicorn
 import weaviate
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 OLLAMA = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
@@ -199,9 +199,8 @@ def health():
     return {"ok": app.state.wv.is_ready()}
 
 
-@app.get("/")
-def pagina():
-    return FileResponse(Path(__file__).parent / "web" / "index.html")
+# página, componente e catálogo; montado por último para não engolir /ask e /health
+app.mount("/", StaticFiles(directory=Path(__file__).parent / "web", html=True), name="web")
 
 
 if __name__ == "__main__":
