@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Latinoware 2026 RAG</title>
-<meta name="description" content="Pergunte sobre as palestras e palestrantes da Latinoware 2026 em português, inglês ou espanhol.">
+<meta name="description" content="Busca com IA nas palestras e palestrantes da Latinoware 2026. Projeto pessoal e não oficial. Responde em português, inglês ou espanhol.">
 <meta name="color-scheme" content="light dark">
 <script>
   // URL da API. No site estático (ilove.the.br, www, *.pages.dev) a página chama rag.ilove.the.br;
@@ -17,7 +17,7 @@
 <style>
   :root {
     --bg: #f7f6f1; --surface: #ffffff; --surface-2: #efede5; --fg: #1b1c19; --muted: #5d5e57;
-    --line: #dcd9ce; --accent: #17694a; --accent-fg: #ffffff; --accent-soft: #dcefe5;
+    --line: #dcd9ce; --line-ui: #7d7a70; --accent: #17694a; --accent-fg: #ffffff; --accent-soft: #dcefe5;
     --danger: #a8321f; --danger-soft: #fbe6e1; --focus: #1d5fd1;
     --radius: 12px; --shadow: 0 1px 2px rgb(0 0 0 / .05), 0 4px 16px rgb(0 0 0 / .04);
     --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -26,7 +26,7 @@
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #121412; --surface: #1b1e1b; --surface-2: #242824; --fg: #ebebe5; --muted: #a4a69d;
-      --line: #333833; --accent: #5cc595; --accent-fg: #0d1f16; --accent-soft: #1d3329;
+      --line: #333833; --line-ui: #7a7f77; --accent: #5cc595; --accent-fg: #0d1f16; --accent-soft: #1d3329;
       --danger: #ff8a73; --danger-soft: #3a1f1a; --focus: #8ab4ff;
       --shadow: none;
     }
@@ -35,7 +35,7 @@
   html { -webkit-text-size-adjust: 100%; }
   body { margin: 0; background: var(--bg); color: var(--fg); font: 400 16px/1.6 var(--sans); }
   a { color: var(--accent); text-underline-offset: 2px; }
-  :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
   .wrap { max-width: 760px; margin: 0 auto; padding: 0 16px; }
 
   header { padding: 28px 0 8px; }
@@ -44,33 +44,37 @@
   h1 { font-size: clamp(1.6rem, 5vw, 2.2rem); line-height: 1.2; margin: 18px 0 8px; font-weight: 700; letter-spacing: -.01em; }
   .sub { color: var(--muted); margin: 0; max-width: 60ch; }
 
-  .langs { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; padding: 3px; background: var(--surface); }
+  .langs { display: inline-flex; border: 1px solid var(--line-ui); border-radius: 999px; padding: 3px; background: var(--surface); }
   .langs button { border: 0; background: transparent; color: var(--muted); font: 600 .85rem/1 var(--sans);
-    padding: 8px 12px; border-radius: 999px; cursor: pointer; min-height: 36px; }
+    padding: 8px 12px; border-radius: 999px; cursor: pointer; min-height: 44px; }
   .langs button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); }
 
-  form { margin-top: 24px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  form { margin-top: 24px; background: var(--surface); border: 1px solid var(--line-ui); border-radius: var(--radius);
     box-shadow: var(--shadow); padding: 12px; }
+  form:focus-within { border-color: var(--accent); outline: 2px solid var(--focus); outline-offset: 2px; }
   textarea { display: block; width: 100%; min-height: 96px; border: 0; background: transparent; color: inherit;
     font: inherit; resize: vertical; padding: 4px; }
   textarea:focus-visible { outline: none; }
-  form:focus-within { border-color: var(--accent); }
+  textarea::placeholder { color: var(--muted); opacity: 1; }
   .acoes { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 8px; flex-wrap: wrap; }
   .dica { color: var(--muted); font-size: .85rem; }
   .enviar { border: 0; background: var(--accent); color: var(--accent-fg); font: 600 1rem/1 var(--sans);
     padding: 12px 20px; border-radius: 999px; cursor: pointer; min-height: 44px; }
-  .enviar:disabled { opacity: .6; cursor: progress; }
+  .enviar[aria-disabled="true"] { opacity: .6; cursor: progress; }
 
-  .exemplos { margin: 16px 0 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 8px; }
+  .exemplos-rotulo { display: block; margin: 20px 0 8px; }
+  .exemplos { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 8px; }
   .exemplos button { border: 1px solid var(--line); background: var(--surface-2); color: var(--fg);
-    font: 400 .9rem/1.3 var(--sans); padding: 8px 12px; border-radius: 999px; cursor: pointer; text-align: left; min-height: 36px; }
+    font: 400 .9rem/1.3 var(--sans); padding: 8px 14px; border-radius: 999px; cursor: pointer; text-align: left; min-height: 44px; }
   .exemplos button:hover { border-color: var(--accent); }
 
   #saida { margin-top: 32px; }
+  #saida:focus { outline: none; }
   .estado { border-radius: var(--radius); padding: 16px; }
+  .estado p { margin: 0; }
   .erro { background: var(--danger-soft); color: var(--danger); }
   .erro button { margin-top: 8px; border: 1px solid currentColor; background: transparent; color: inherit;
-    font: 600 .9rem/1 var(--sans); padding: 8px 14px; border-radius: 999px; cursor: pointer; min-height: 36px; }
+    font: 600 .9rem/1 var(--sans); padding: 8px 14px; border-radius: 999px; cursor: pointer; min-height: 44px; }
   .vazio { background: var(--surface-2); color: var(--muted); }
   .carregando { color: var(--muted); }
   .barra { height: 12px; border-radius: 6px; background: var(--surface-2); margin: 10px 0; animation: pulsa 1.4s ease-in-out infinite; }
@@ -79,7 +83,7 @@
   @media (prefers-reduced-motion: reduce) { .barra { animation: none; } }
 
   .resposta { font-size: 1.05rem; white-space: pre-wrap; overflow-wrap: anywhere; }
-  .resposta a.cit { font: 500 .8em/1 var(--mono); text-decoration: none; padding: 1px 4px; border-radius: 4px;
+  .resposta a.cit { font: 500 .8em/1 var(--mono); padding: 4px 6px; border-radius: 4px;
     background: var(--accent-soft); vertical-align: 1px; }
   h2 { font-size: .8rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 32px 0 12px; font-weight: 600; }
   .fontes { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
@@ -89,7 +93,7 @@
   .num { font: 500 .85rem/1.6 var(--mono); color: var(--muted); }
   .titulo { font-weight: 600; overflow-wrap: anywhere; }
   .meta { grid-column: 2; display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: .88rem; color: var(--muted); align-items: center; }
-  .tipo { font: 500 .72rem/1 var(--mono); text-transform: uppercase; letter-spacing: .04em; border: 1px solid var(--line);
+  .tipo { font: 500 .75rem/1 var(--mono); text-transform: uppercase; letter-spacing: .04em; border: 1px solid var(--line);
     border-radius: 4px; padding: 4px 6px; }
 
   footer { margin: 56px 0 32px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: .85rem; }
@@ -103,28 +107,30 @@
     <div class="top">
       <span class="marca">Latinoware 2026 · RAG</span>
       <div class="langs" role="group" id="langs" aria-label="Idioma">
-        <button type="button" data-l="auto">Auto</button>
-        <button type="button" data-l="pt" lang="pt">PT</button>
-        <button type="button" data-l="en" lang="en">EN</button>
-        <button type="button" data-l="es" lang="es">ES</button>
+        <button type="button" data-l="auto" id="auto">Auto</button>
+        <button type="button" data-l="pt" lang="pt" aria-label="Português">PT</button>
+        <button type="button" data-l="en" lang="en" aria-label="English">EN</button>
+        <button type="button" data-l="es" lang="es" aria-label="Español">ES</button>
       </div>
     </div>
-    <h1 id="h1"></h1>
+    <h1 id="h1">Pergunte sobre a Latinoware 2026</h1>
     <p class="sub" id="sub"></p>
   </header>
 
   <main>
+    <noscript><p>Esta página precisa de JavaScript. · This page needs JavaScript. · Esta página necesita JavaScript.</p></noscript>
     <form id="f">
       <label for="q" class="sr" id="lq"></label>
-      <textarea id="q" required minlength="3" maxlength="1000"></textarea>
+      <textarea id="q" required minlength="3" maxlength="1000" aria-describedby="dica"></textarea>
       <div class="acoes">
         <span class="dica" id="dica"></span>
         <button class="enviar" id="b" type="submit"></button>
       </div>
     </form>
-    <span class="sr" id="lex"></span>
+    <span class="dica exemplos-rotulo" id="lex"></span>
     <ul class="exemplos" id="exemplos" aria-labelledby="lex"></ul>
-    <section id="saida" aria-live="polite"></section>
+    <p class="sr" id="anuncio" role="status"></p>
+    <section id="saida" tabindex="-1"></section>
   </main>
 
   <footer>
@@ -138,84 +144,94 @@
     pt: {
       html: "pt-BR", h1: "Pergunte sobre a Latinoware 2026",
       sub: "Palestras e palestrantes do congresso de software livre em Foz do Iguaçu, 14 a 16 de outubro de 2026. Responde em português, inglês ou espanhol.",
-      lq: "Sua pergunta", ph: "Ex.: Quem falou sobre IA na educação?", dica: "Ctrl+Enter para enviar",
-      enviar: "Perguntar", enviando: "Procurando…", lex: "Exemplos de perguntas", langs: "Idioma da resposta",
-      carregando: "Procurando nas palestras e gerando a resposta. Leva de 5 a 20 segundos.",
-      fontes: "Fontes", vazio: "Nenhum trecho encontrado para essa pergunta. Tente outras palavras ou o nome de um palestrante.",
+      lq: "Sua pergunta", ph: "Ex.: Quem falou sobre Home Assistant?", dica: "Ctrl/⌘+Enter para enviar",
+      enviar: "Perguntar", enviando: "Procurando…", lex: "Exemplos:", langs: "Idioma da interface e da resposta",
+      carregando: "Procurando nas palestras e gerando a resposta. Pode levar de 5 a 20 segundos.",
+      fontes: "Fontes", fonte: "Fonte", pronto: "Resposta pronta.",
+      vazio: "Nenhum trecho encontrado para essa pergunta. Tente outras palavras ou o nome de um palestrante.",
       erro: "Não foi possível responder agora.", ocupado: "Muitas perguntas ao mesmo tempo. Tente de novo em alguns segundos.",
-      rede: "Sem conexão com o servidor da RAG.", tentar: "Tentar de novo",
+      rede: "Sem conexão com o servidor de busca.", demora: "O servidor demorou demais para responder.", tentar: "Tentar de novo",
       tipo: { resumo: "Resumo", bio: "Palestrante", transcricao: "Vídeo" },
-      video: "Ver no vídeo em", estimado: "horário estimado",
-      aviso: "Projeto não oficial, sem fins lucrativos, sem relação com a organização da Latinoware. As respostas são geradas por modelo de linguagem: confira nas fontes.",
+      video: "Ver no vídeo a partir de", estimado: "horário estimado",
+      aviso: "Projeto pessoal e não oficial, sem fins lucrativos e sem vínculo com a organização da Latinoware. As respostas são geradas por IA (modelo de linguagem): confira nas fontes.",
       dados: "Dados públicos de", repo: "Código no GitHub",
       ex: ["Quem falou sobre Home Assistant?", "Quais palestras trataram de segurança?", "O que o maddog apresentou?", "Teve palestra sobre IA na educação?"],
     },
     en: {
       html: "en", h1: "Ask about Latinoware 2026",
       sub: "Talks and speakers of the free software conference in Foz do Iguaçu, Brazil, October 14–16, 2026. Answers in English, Spanish or Portuguese.",
-      lq: "Your question", ph: "E.g.: Who talked about Home Assistant?", dica: "Ctrl+Enter to send",
-      enviar: "Ask", enviando: "Searching…", lex: "Example questions", langs: "Answer language",
-      carregando: "Searching the talks and writing the answer. Takes 5 to 20 seconds.",
-      fontes: "Sources", vazio: "No excerpts found for this question. Try other words or a speaker's name.",
+      lq: "Your question", ph: "E.g.: Who talked about Home Assistant?", dica: "Ctrl/⌘+Enter to send",
+      enviar: "Ask", enviando: "Searching…", lex: "Examples:", langs: "Interface and answer language",
+      carregando: "Searching the talks and writing the answer. Can take 5 to 20 seconds.",
+      fontes: "Sources", fonte: "Source", pronto: "Answer ready.",
+      vazio: "No excerpts found for this question. Try other words or a speaker's name.",
       erro: "Could not answer right now.", ocupado: "Too many questions at once. Try again in a few seconds.",
-      rede: "Could not reach the RAG server.", tentar: "Try again",
+      rede: "Could not reach the search server.", demora: "The server took too long to answer.", tentar: "Try again",
       tipo: { resumo: "Abstract", bio: "Speaker", transcricao: "Video" },
-      video: "Watch at", estimado: "estimated time",
-      aviso: "Unofficial, non-profit project, not affiliated with the Latinoware organizers. Answers are generated by a language model: check the sources.",
+      video: "Watch from", estimado: "estimated time",
+      aviso: "Personal, unofficial, non-profit project, not affiliated with the Latinoware organizers. Answers are generated by AI (a language model): check the sources.",
       dados: "Public data from", repo: "Code on GitHub",
       ex: ["Who talked about Home Assistant?", "Which talks covered security?", "What did maddog present?", "Was there a talk about AI in education?"],
     },
     es: {
       html: "es", h1: "Pregunta sobre Latinoware 2026",
       sub: "Charlas y ponentes del congreso de software libre en Foz do Iguaçu, Brasil, del 14 al 16 de octubre de 2026. Responde en español, inglés o portugués.",
-      lq: "Tu pregunta", ph: "Ej.: ¿Qué charlas hubo sobre seguridad?", dica: "Ctrl+Enter para enviar",
-      enviar: "Preguntar", enviando: "Buscando…", lex: "Ejemplos de preguntas", langs: "Idioma de la respuesta",
-      carregando: "Buscando en las charlas y redactando la respuesta. Tarda de 5 a 20 segundos.",
-      fontes: "Fuentes", vazio: "No se encontraron fragmentos para esta pregunta. Prueba otras palabras o el nombre de un ponente.",
-      erro: "No fue posible responder ahora.", ocupado: "Demasiadas preguntas a la vez. Inténtalo de nuevo en unos segundos.",
-      rede: "No se pudo conectar con el servidor de la RAG.", tentar: "Intentar de nuevo",
+      lq: "Tu pregunta", ph: "Ej.: ¿Quién habló de Home Assistant?", dica: "Ctrl/⌘+Enter para enviar",
+      enviar: "Preguntar", enviando: "Buscando…", lex: "Ejemplos:", langs: "Idioma de la interfaz y de la respuesta",
+      carregando: "Buscando en las charlas y redactando la respuesta. Puede tardar de 5 a 20 segundos.",
+      fontes: "Fuentes", fonte: "Fuente", pronto: "Respuesta lista.",
+      vazio: "No se encontraron fragmentos para esta pregunta. Prueba otras palabras o el nombre de un ponente.",
+      erro: "No se pudo responder ahora.", ocupado: "Demasiadas preguntas a la vez. Inténtalo de nuevo en unos segundos.",
+      rede: "No se pudo conectar con el servidor de búsqueda.", demora: "El servidor tardó demasiado en responder.", tentar: "Intentar de nuevo",
       tipo: { resumo: "Resumen", bio: "Ponente", transcricao: "Video" },
-      video: "Ver en el video en", estimado: "hora estimada",
-      aviso: "Proyecto no oficial, sin fines de lucro, sin relación con la organización de Latinoware. Las respuestas las genera un modelo de lenguaje: verifica las fuentes.",
+      video: "Ver el video desde", estimado: "hora estimada",
+      aviso: "Proyecto personal y no oficial, sin fines de lucro y sin vínculo con la organización de Latinoware. Las respuestas las genera una IA (modelo de lenguaje): verifica las fuentes.",
       dados: "Datos públicos de", repo: "Código en GitHub",
-      ex: ["¿Qué charlas hubo sobre seguridad?", "¿Quién habló de Home Assistant?", "¿Qué presentó maddog?", "¿Hubo charlas sobre IA en la educación?"],
+      ex: ["¿Quién habló de Home Assistant?", "¿Qué charlas hubo sobre seguridad?", "¿Qué presentó maddog?", "¿Hubo charlas sobre IA en la educación?"],
     },
   };
   const $ = (id) => document.getElementById(id);
   const el = (tag, props = {}, ...filhos) => { const e = Object.assign(document.createElement(tag), props); e.append(...filhos); return e; };
+  const tem = (k) => typeof k === "string" && Object.hasOwn(T, k);
   const navegador = (navigator.language || "pt").slice(0, 2);
   let escolha = "auto";
   try { escolha = localStorage.getItem("idioma") || "auto"; } catch {}
-  if (escolha !== "auto" && !T[escolha]) escolha = "auto";
-  let ultimo = null;
+  if (escolha !== "auto" && !tem(escolha)) escolha = "auto";
+  let ocupado = false;
 
-  const ui = () => T[escolha !== "auto" ? escolha : (T[navegador] ? navegador : "pt")];
+  const lingua = () => escolha !== "auto" ? escolha : (tem(navegador) ? navegador : "pt");
+  const ui = () => T[lingua()];
   const seguro = (url) => typeof url === "string" && url.startsWith("https://");
-  const hms = (s) => [Math.floor(s / 3600), Math.floor(s / 60) % 60, s % 60]
-    .map((n, i) => i ? String(n).padStart(2, "0") : n).join(":");
+  const hms = (s) => {
+    const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, ss = String(s % 60).padStart(2, "0");
+    return h ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
+  };
 
   function aplicar() {
     const t = ui();
     document.documentElement.lang = t.html;
     for (const k of ["h1", "sub", "lq", "dica", "lex", "aviso", "dados", "repo"]) $(k).textContent = t[k];
     $("q").placeholder = t.ph;
-    $("b").textContent = $("b").disabled ? t.enviando : t.enviar;
+    $("b").textContent = ocupado ? t.enviando : t.enviar;
+    $("auto").textContent = `Auto (${lingua().toUpperCase()})`;
     $("langs").setAttribute("aria-label", t.langs);
     for (const b of $("langs").children) b.setAttribute("aria-pressed", b.dataset.l === escolha);
     $("exemplos").replaceChildren(...t.ex.map((x) => el("li", {}, el("button", {
-      type: "button", textContent: x, onclick: () => { $("q").value = x; perguntar(); } }))));
+      type: "button", textContent: x, onclick: () => { if (ocupado) return; $("q").value = x; perguntar(x); } }))));
   }
 
   function link(texto, url) {
     return seguro(url) ? el("a", { href: url, target: "_blank", rel: "noopener", textContent: texto }) : el("span", { textContent: texto });
   }
 
-  // troca [n] da resposta por links para a fonte n, sem interpretar HTML
-  function comCitacoes(texto, total) {
+  // troca [n] e [n, m] da resposta por links para as fontes, sem interpretar HTML
+  function comCitacoes(texto, numeros, t) {
     const p = el("div", { className: "resposta" });
-    for (const parte of texto.split(/(\[\d+\])/)) {
-      const n = parte.match(/^\[(\d+)\]$/)?.[1];
-      p.append(n && +n >= 1 && +n <= total ? el("a", { className: "cit", href: `#fonte-${n}`, textContent: n }) : parte);
+    for (const parte of texto.split(/(\[\d+(?:\s*[,;]\s*\d+)*\])/)) {
+      const ns = /^\[[\d,;\s]+\]$/.test(parte) ? parte.match(/\d+/g).map(Number) : [];
+      if (!ns.length || !ns.every((n) => numeros.has(n))) { p.append(parte); continue; }
+      ns.forEach((n, i) => p.append(i ? " " : "", el("a", {
+        className: "cit", href: `#fonte-${n}`, textContent: n, ariaLabel: `${t.fonte} ${n}` })));
     }
     return p;
   }
@@ -223,14 +239,15 @@
   function fonte(f, t) {
     const meta = el("div", { className: "meta" }, el("span", { className: "tipo", textContent: t.tipo[f.fonte] || f.fonte }));
     if (f.fonte !== "bio") {
-      if (f.links_palestrantes?.length) {
+      const pessoas = Array.isArray(f.links_palestrantes) ? f.links_palestrantes.filter((p) => p && p.nome) : [];
+      if (pessoas.length) {
         const span = el("span");
-        f.links_palestrantes.forEach((p, i) => span.append(i ? ", " : "", link(p.nome, p.url)));
+        pessoas.forEach((p, i) => span.append(i ? ", " : "", link(p.nome, p.url)));
         meta.append(span);
       } else if (f.palestrantes) meta.append(el("span", { textContent: f.palestrantes }));
     }
     let titulo;
-    if (f.fonte === "transcricao" && Number.isInteger(f.inicio_video_s)) {
+    if (f.fonte === "transcricao" && Number.isInteger(f.inicio_video_s) && f.inicio_video_s >= 0) {
       meta.append(link(`▶ ${t.video} ${hms(f.inicio_video_s)}`, f.url));
       if (f.alinhamento === "estimado") meta.append(el("span", { textContent: `(${t.estimado})` }));
       titulo = el("span", { textContent: f.titulo || f.palestrantes });
@@ -244,37 +261,47 @@
       el("span", { className: "num", textContent: f.n }), el("span", { className: "titulo" }, titulo), meta);
   }
 
-  function mostrar(...nos) { $("saida").replaceChildren(...nos); }
+  function mostrar(anuncio, ...nos) { $("anuncio").textContent = anuncio; $("saida").replaceChildren(...nos); }
 
-  async function perguntar() {
-    const pergunta = $("q").value.trim();
-    if (pergunta.length < 3 || $("b").disabled) { $("q").focus(); return; }
+  async function perguntar(pergunta) {
+    if (ocupado) return;
+    if (pergunta.length < 3) { $("q").focus(); return; }
     const t = ui();
-    ultimo = pergunta;
-    $("b").disabled = true; $("b").textContent = t.enviando;
-    mostrar(el("div", { className: "estado carregando", role: "status" },
+    ocupado = true;
+    $("b").setAttribute("aria-disabled", "true"); $("b").textContent = t.enviando;
+    history.replaceState(null, "", location.pathname + location.search);  // tira o #fonte-n da resposta anterior
+    mostrar(t.carregando, el("div", { className: "estado carregando" },
       el("p", { textContent: t.carregando }), el("div", { className: "barra" }), el("div", { className: "barra" }), el("div", { className: "barra" })));
+    let r;
     try {
       const corpo = { pergunta };
       if (escolha !== "auto") corpo.idioma = escolha;
-      const r = await fetch(API_URL + "/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corpo) });
-      if (!r.ok) throw Object.assign(new Error(), { status: r.status });
+      r = await fetch(API_URL + "/ask", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(corpo), signal: AbortSignal.timeout(90000) });
+      if (!r.ok) throw new Error(r.status);
       const d = await r.json();
-      if (!d.fontes?.length) { mostrar(el("div", { className: "estado vazio", textContent: t.vazio })); return; }
-      const lingua = T[d.idioma] || t;
-      mostrar(el("div", { lang: lingua.html }, comCitacoes(d.resposta, d.fontes.length)),
-        el("h2", { textContent: lingua.fontes }), el("ol", { className: "fontes" }, ...d.fontes.map((f) => fonte(f, lingua))));
+      const fontes = Array.isArray(d?.fontes) ? d.fontes.filter((f) => f && Number.isInteger(f.n)) : [];
+      if (!fontes.length || typeof d.resposta !== "string") { mostrar(t.vazio, el("div", { className: "estado vazio", textContent: t.vazio })); return; }
+      const tl = tem(d.idioma) ? T[d.idioma] : t;
+      mostrar(tl.pronto, el("div", { lang: tl.html },
+        comCitacoes(d.resposta, new Set(fontes.map((f) => f.n)), tl),
+        el("h2", { textContent: tl.fontes }), el("ol", { className: "fontes" }, ...fontes.map((f) => fonte(f, tl)))));
+      $("saida").focus();
     } catch (err) {
-      const msg = err.status === 429 ? t.ocupado : err.status ? `${t.erro} (${err.status})` : t.rede;
-      mostrar(el("div", { className: "estado erro", role: "alert" }, el("p", { textContent: msg, style: "margin:0" }),
-        el("button", { type: "button", textContent: t.tentar, onclick: () => { $("q").value = ultimo; perguntar(); } })));
+      const msg = err.name === "TimeoutError" ? t.demora : !r ? t.rede : r.status === 429 ? t.ocupado
+        : `${t.erro}${r.ok ? "" : ` (${r.status})`}`;
+      mostrar(msg, el("div", { className: "estado erro" }, el("p", { textContent: msg }),
+        el("button", { type: "button", textContent: t.tentar, onclick: () => perguntar(pergunta) })));
     } finally {
-      $("b").disabled = false; $("b").textContent = ui().enviar;
+      ocupado = false;
+      $("b").removeAttribute("aria-disabled"); $("b").textContent = ui().enviar;
     }
   }
 
-  $("f").addEventListener("submit", (e) => { e.preventDefault(); perguntar(); });
-  $("q").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); perguntar(); } });
+  $("f").addEventListener("submit", (e) => { e.preventDefault(); perguntar($("q").value.trim()); });
+  $("q").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); perguntar($("q").value.trim()); }
+  });
   $("langs").addEventListener("click", (e) => {
     const b = e.target.closest("button"); if (!b) return;
     escolha = b.dataset.l;

@@ -68,6 +68,10 @@ def test_ask_tres_linguas(idioma, pergunta):
     assert api.detectar_idioma(d["resposta"]) == idioma
     assert "home assistant" in d["resposta"].lower()
     assert any("maddog" in f["titulo"].lower() or "maddog" in f["palestrantes"].lower() for f in d["fontes"])
+    for f in d["fontes"]:
+        assert isinstance(f["links_palestrantes"], list)
+        assert all(p["url"].startswith("https://") for p in f["links_palestrantes"])
+        assert (f["inicio_video_s"] is None) == (f["fonte"] != "transcricao")
 
 
 @pytest.mark.skipif(not api_no_ar(), reason="API fora do ar")

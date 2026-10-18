@@ -197,9 +197,12 @@ def main():
                                                    "pais", "url", "palestras")])
         col_t = cli.collections.create("Trecho", vector_config=Configure.Vectors.self_provided(),
                                        properties=[texto(n) for n in ("texto", "fonte", "palestra_id",
-                                                   "palestra_titulo", "palestrantes", "links_palestrantes", "idioma_original",
+                                                   "palestra_titulo", "palestrantes", "idioma_original",
                                                    "espaco", "inicio", "video_id", "url", "alinhamento")]
-                                       + [Property(name="inicio_video_s", data_type=DataType.INT)])
+                                       + [Property(name="inicio_video_s", data_type=DataType.INT),
+                                          # só para exibir: fora da busca BM25 (URLs e nomes repetidos)
+                                          Property(name="links_palestrantes", data_type=DataType.TEXT,
+                                                   index_searchable=False, index_filterable=False)])
         with col_p.batch.fixed_size(200) as b:
             for p, vec in zip(palestras, vet_palestras):
                 b.add_object(properties={

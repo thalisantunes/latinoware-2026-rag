@@ -120,6 +120,13 @@ async def gerar(sistema, usuario):
     return r.json()["message"]["content"]
 
 
+def links(valor):
+    try:
+        return json.loads(valor or "[]")
+    except ValueError:
+        return []
+
+
 def buscar(pergunta, vetor, k):
     res = app.state.wv.collections.get("Trecho").query.hybrid(
         query=pergunta, vector=vetor, alpha=ALPHA, limit=k * 3)
@@ -161,7 +168,7 @@ async def responder(q):
         raise HTTPException(503, "gerador de respostas indisponível") from None
     # transcrições servem de contexto, mas não são devolvidas: só título, autor e link com tempo
     fontes = [{"n": i, "titulo": t["palestra_titulo"], "palestrantes": t["palestrantes"],
-               "links_palestrantes": json.loads(t.get("links_palestrantes") or "[]"),
+               "links_palestrantes": links(t.get("links_palestrantes")),
                "fonte": t["fonte"], "url": t["url"], "alinhamento": t["alinhamento"],
                "inicio_video_s": t["inicio_video_s"] if t["video_id"] else None}
               for i, t in enumerate(trechos, 1)]
