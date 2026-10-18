@@ -154,8 +154,11 @@ talk abstracts and speaker bios.
 - Recordings: 17 lives on the Itaipu Parquetec channel (122 h), from the Brasil, Paraguai,
   Iguaçu, Bolívia, Peru and Haiti rooms. No recordings of the Equador, Argentina, Uruguai and
   Chile rooms or the workshops. No Espaço Brasil live on Oct 16.
-- **Transcripts: pending.** From here YouTube asked for sign-in to download audio. The public
-  index currently covers abstracts and speakers.
+- Transcripts: 17/17 lives (118 h of audio, about 559k words) with faster-whisper
+  large-v3-turbo. Live start times come from YouTube, so excerpts link to the right moment.
+  The Espaço Iguaçu lives are mostly waiting music: 3 of them yielded almost no speech.
+- Index: 2293 excerpts (236 abstracts, 168 bios, 1889 from transcripts; 89 of these fall
+  outside the schedule). Search recall@8 = 9/10.
 
 ### Legal notice
 
@@ -329,8 +332,12 @@ los resúmenes de las charlas y las biografías de los ponentes.
 - Grabaciones: 17 lives en el canal Itaipu Parquetec (122 h), de los espacios Brasil, Paraguai,
   Iguaçu, Bolívia, Peru y Haiti. No hay grabación de los espacios Equador, Argentina, Uruguai,
   Chile ni de los talleres. No hay live del Espaço Brasil el 16/10.
-- **Transcripciones: pendientes.** Desde aquí, YouTube pidió iniciar sesión para descargar el
-  audio. El índice público cubre por ahora resúmenes y ponentes.
+- Transcripciones: 17/17 lives (118 h de audio, unas 559 mil palabras) con faster-whisper
+  large-v3-turbo. El inicio de cada live viene de YouTube, así que los fragmentos enlazan al
+  momento correcto. Las lives del Espaço Iguaçu son casi todo música de espera: 3 de ellas
+  casi no tienen habla.
+- Índice: 2293 fragmentos (236 resúmenes, 168 bios, 1889 de transcripciones; 89 de ellos fuera
+  de la programación). recall@8 de la búsqueda = 9/10.
 
 ### Aviso legal
 
@@ -503,8 +510,11 @@ resumos das palestras e as bios dos palestrantes.
 - Gravações: 17 lives no canal Itaipu Parquetec (122 h), dos espaços Brasil, Paraguai, Iguaçu,
   Bolívia, Peru e Haiti. Não há gravação dos espaços Equador, Argentina, Uruguai e Chile nem das
   oficinas. Não há live do Espaço Brasil em 16/10.
-- **Transcrições: pendentes.** Daqui, o YouTube pediu login para baixar o áudio. O índice
-  público cobre por enquanto resumos e palestrantes.
+- Transcrições: 17/17 lives (118 h de áudio, cerca de 559 mil palavras) com faster-whisper
+  large-v3-turbo. O início de cada live vem do YouTube, então os trechos levam ao instante
+  certo. As lives do Espaço Iguaçu são quase só música de espera: 3 delas quase não têm fala.
+- Índice: 2293 trechos (236 resumos, 168 bios, 1889 de transcrições; 89 destes fora da grade).
+  recall@8 da busca = 9/10.
 
 ### Aviso legal
 
