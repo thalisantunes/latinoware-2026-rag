@@ -221,9 +221,12 @@ def reordenar(pergunta, trechos):
         return trechos
     try:
         r = httpx.post(RERANK_URL, timeout=30, json={
-            "query": pergunta, "documents": [f"{t['palestra_titulo']}\n{t['texto']}"[:600] for t in topo]})
+            "model": RERANK_MODEL, "query": pergunta,
+            "documents": [f"{t['palestra_titulo']}\n{t['texto']}"[:600] for t in topo]})
         r.raise_for_status()
         ordem = sorted(r.json()["results"], key=lambda x: -x["relevance_score"])
+        if sorted(x["index"] for x in ordem) != list(range(len(topo))):  # parcial, repetido ou fora da faixa
+            raise ValueError(f"reranker devolveu {len(ordem)} índices para {len(topo)} trechos")
         return [topo[x["index"]] for x in ordem] + resto
     except Exception:
         log.exception("reranker indisponível; segue sem reordenar")

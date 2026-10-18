@@ -206,6 +206,13 @@ def test_reordenar(monkeypatch):
     monkeypatch.setattr(api.httpx, "post", lambda *a, **k: Resposta())
     assert [t["palestra_titulo"] for t in api.reordenar("q", trechos)] == ["t2", "t0", "t1", "t3"]
 
+    class Parcial(Resposta):
+        def json(self):  # só 1 dos 3 índices: não dá para confiar, segue a ordem da busca
+            return {"results": [{"index": 2, "relevance_score": 2}]}
+
+    monkeypatch.setattr(api.httpx, "post", lambda *a, **k: Parcial())
+    assert api.reordenar("q", trechos) == trechos
+
     def falha(*a, **k):
         raise api.httpx.ConnectError("fora do ar")
 
