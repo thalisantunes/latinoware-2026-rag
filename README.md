@@ -91,6 +91,7 @@ make transcrever  # estimate: 2 to 4 h for 122 h of audio [not measured]
 make indexar      # ~1 min without transcripts; a few minutes with them
 make api          # http://localhost:8765 (page + API)
 make avaliar      # recall@8 on the reference questions; fails below 100% (also runs after make indexar)
+make reverter-indice     # point the aliases back to the previous index version (reindex has no downtime)
 make gabarito-candidatos  # suggestions from the history; add only the checked ones to data/gabarito_extra.json, then delete the candidates file
 make testar       # tests; integration tests need the API running
 ```
@@ -296,6 +297,7 @@ make transcrever  # estimación: 2 a 4 h para 122 h de audio [no medido]
 make indexar      # ~1 min sin transcripciones; unos minutos con ellas
 make api          # http://localhost:8765 (página + API)
 make avaliar      # recall@8 de las preguntas de referencia; falla por debajo de 100% (también tras make indexar)
+make reverter-indice     # vuelve los alias a la versión anterior del índice (reindexar no corta la API)
 make gabarito-candidatos  # sugerencias del historial; solo las revisadas van a data/gabarito_extra.json; después, borre el archivo de candidatos
 make testar       # pruebas; las de integración necesitan la API activa
 ```
@@ -500,6 +502,7 @@ make transcrever  # estimativa: 2 a 4 h para as 122 h de áudio [não medido]
 make indexar      # ~1 min sem transcrições; alguns minutos com
 make api          # http://localhost:8765 (página + API)
 make avaliar      # recall@8 das perguntas-gabarito; falha abaixo de 100% (roda também no make indexar)
+make reverter-indice     # volta os alias para a versão anterior do índice (reindexar não derruba a API)
 make gabarito-candidatos  # sugestões do histórico; só as conferidas vão para data/gabarito_extra.json; depois, apague o arquivo de candidatos
 make testar       # testes; os de integração precisam da API no ar
 ```
