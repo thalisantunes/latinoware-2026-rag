@@ -377,12 +377,15 @@
 
   function partilha(pergunta, d, fontes, t) {
     const avisar = (msg) => { $("anuncio").textContent = ""; setTimeout(() => { $("anuncio").textContent = msg; }, 50); };
-    const copiar = (texto, ok) => navigator.clipboard.writeText(texto).then(() => avisar(ok), () => avisar(t.naoCopiou));
+    // fora de https não existe navigator.clipboard: o erro vira aviso, não exceção solta
+    const copiar = (texto, ok) => Promise.resolve().then(() => navigator.clipboard.writeText(texto))
+      .then(() => avisar(ok), () => avisar(t.naoCopiou));
     const link = `${location.origin}${location.pathname}?pergunta=${encodeURIComponent(pergunta)}`;
     return el("div", { className: "partilha" },
       el("button", { type: "button", textContent: t.copiar, onclick: () => copiar(textoPuro(pergunta, d, fontes, t), t.copiado) }),
       el("button", { type: "button", textContent: t.compartilhar, onclick: () => {
-        if (navigator.share) navigator.share({ title: document.title, text: pergunta, url: link }).catch(() => {});
+        if (navigator.share) navigator.share({ title: document.title, text: pergunta, url: link })
+          .catch((e) => { if (e.name !== "AbortError") copiar(link, t.linkCopiado); });
         else copiar(link, t.linkCopiado);
       } }));
   }

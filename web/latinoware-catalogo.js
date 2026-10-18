@@ -19,7 +19,7 @@
       perguntaRotulo: "Pergunte sobre as palestras", enviar: "Perguntar", aguarde: "Buscando e escrevendo a resposta…",
       ocupado: "Muitas perguntas agora. Tente de novo em instantes.", demorou: "A resposta demorou demais. Tente de novo.",
       erro: "Não foi possível responder agora.", fontes: "Fontes", video: "Vídeo",
-      copiar: "Copiar resposta", compartilhar: "Compartilhar", copiado: "Resposta copiada.", linkCopiado: "Link copiado.",
+      copiar: "Copiar resposta", compartilhar: "Compartilhar", copiado: "Resposta copiada.", linkCopiado: "Link copiado.", naoCopiou: "Não foi possível copiar.",
     },
     en: {
       busca: "Search", buscaPh: "title, speaker, topic…", data: "Day", espaco: "Room", trilha: "Track",
@@ -32,7 +32,7 @@
       perguntaRotulo: "Ask about the talks", enviar: "Ask", aguarde: "Searching and writing the answer…",
       ocupado: "Too many questions right now. Try again shortly.", demorou: "The answer took too long. Try again.",
       erro: "Could not answer right now.", fontes: "Sources", video: "Video",
-      copiar: "Copy answer", compartilhar: "Share", copiado: "Answer copied.", linkCopiado: "Link copied.",
+      copiar: "Copy answer", compartilhar: "Share", copiado: "Answer copied.", linkCopiado: "Link copied.", naoCopiou: "Could not copy.",
     },
     es: {
       busca: "Buscar", buscaPh: "título, ponente, tema…", data: "Día", espaco: "Espacio", trilha: "Temática",
@@ -45,7 +45,7 @@
       perguntaRotulo: "Pregunta sobre las charlas", enviar: "Preguntar", aguarde: "Buscando y escribiendo la respuesta…",
       ocupado: "Demasiadas preguntas ahora. Inténtalo de nuevo en breve.", demorou: "La respuesta tardó demasiado. Inténtalo de nuevo.",
       erro: "No se pudo responder ahora.", fontes: "Fuentes", video: "Video",
-      copiar: "Copiar respuesta", compartilhar: "Compartir", copiado: "Respuesta copiada.", linkCopiado: "Enlace copiado.",
+      copiar: "Copiar respuesta", compartilhar: "Compartir", copiado: "Respuesta copiada.", linkCopiado: "Enlace copiado.", naoCopiou: "No se pudo copiar.",
     },
   };
 
@@ -235,7 +235,11 @@
         };
         raiz.addEventListener("click", this.cliques);
       }
-      if (api) raiz.querySelector(".ia").addEventListener("submit", e => { e.preventDefault(); this.enviar(); });
+      if (api) {
+        const f = raiz.querySelector(".ia");
+        f.addEventListener("submit", e => { e.preventDefault(); this.enviar(); });
+        f.q.value = (q.get(P + "pergunta") || "").slice(0, 1000);
+      }
       this.filtrar(false);
       this.irPara(location.hash);
     }
@@ -300,15 +304,19 @@
     partilha(out, pergunta, resposta, fontes) {
       const t = this.t, aviso = this.shadowRoot.querySelector(".ia .sr");
       const avisar = msg => { aviso.textContent = ""; setTimeout(() => { aviso.textContent = msg; }, 50); };
-      const copiar = (texto, ok) => navigator.clipboard.writeText(texto).then(() => avisar(ok), () => avisar(t.erro));
+      const copiar = (texto, ok) => Promise.resolve().then(() => navigator.clipboard.writeText(texto))
+        .then(() => avisar(ok), () => avisar(t.naoCopiou));
       const caixa = document.createElement("div");
       caixa.className = "acoes";
       caixa.innerHTML = `<button type="button" class="sec">${esc(t.copiar)}</button><button type="button" class="sec">${esc(t.compartilhar)}</button>`;
       const [bCopiar, bPartilhar] = caixa.children;
       bCopiar.onclick = () => copiar(`${pergunta}\n\n${resposta}\n\n${fontes}`, t.copiado);
+      const link = new URL(location.href);
+      link.searchParams.set(P + "pergunta", pergunta); // quem abrir o link encontra a pergunta preenchida
       bPartilhar.onclick = () => navigator.share
-        ? navigator.share({ title: document.title, text: pergunta, url: location.href }).catch(() => {})
-        : copiar(location.href, t.linkCopiado);
+        ? navigator.share({ title: document.title, text: pergunta, url: link.href })
+          .catch(e => { if (e.name !== "AbortError") copiar(link.href, t.linkCopiado); })
+        : copiar(link.href, t.linkCopiado);
       out.querySelector(".resp").after(caixa);
     }
 
