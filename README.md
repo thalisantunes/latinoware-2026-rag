@@ -57,7 +57,7 @@ Design decisions:
   agent) and deleted automatically after that. An identical question (bge-m3 distance ≤ 0.05, same model and index)
   reuses the stored answer, with a "Generate again" button; `/frequentes` lists only questions from a hand-curated list
   (`data/frequentes_aprovadas.json`), since the text typed by visitors becomes public.
-- **Usage metrics**: `GET /stats?dias=7` returns anonymous daily counts (language, reused answers, no-answer, 429,
+- **Usage metrics**: `GET /stats?dias=7` returns anonymous daily counts (Brasília days) (language, reused answers, no-answer, 429,
   errors, p50/p95), one line per question in `data/metricas/` without the question text or IP, kept 90 days;
   `make metricas` appends the weekly line to `STATUS.md`.
 
@@ -260,7 +260,7 @@ Decisiones:
   user agent) y se borran solas después. Una pregunta igual (distancia bge-m3 ≤ 0,05, mismo modelo e índice)
   reutiliza la respuesta guardada, con un botón "Generar de nuevo"; `/frequentes` solo lista preguntas de una lista revisada a mano
   (`data/frequentes_aprovadas.json`), porque el texto que escriben los visitantes se vuelve público.
-- **Métricas de uso**: `GET /stats?dias=7` devuelve conteos diarios anónimos (idioma, respuestas reutilizadas, sin
+- **Métricas de uso**: `GET /stats?dias=7` devuelve conteos diarios anónimos (días de Brasilia) (idioma, respuestas reutilizadas, sin
   respuesta, 429, errores, p50/p95), una línea por pregunta en `data/metricas/` sin el texto ni la IP, guardadas
   90 días; `make metricas` agrega la línea semanal al `STATUS.md`.
 
@@ -462,7 +462,7 @@ Decisões:
   agent) e são apagadas sozinhas depois. Pergunta igual (distância bge-m3 ≤ 0,05, mesmo modelo e índice)
   reaproveita a resposta guardada, com botão "Gerar de novo"; `/frequentes` só lista perguntas de uma lista revisada à mão
   (`data/frequentes_aprovadas.json`), porque o texto digitado pelos visitantes fica público.
-- **Métricas de uso**: `GET /stats?dias=7` devolve contagens diárias anônimas (idioma, respostas reaproveitadas, sem
+- **Métricas de uso**: `GET /stats?dias=7` devolve contagens diárias anônimas (dias de Brasília) (idioma, respostas reaproveitadas, sem
   resposta, 429, erros, p50/p95), uma linha por pergunta em `data/metricas/` sem o texto nem o IP, guardadas 90
   dias; `make metricas` acrescenta a linha semanal ao `STATUS.md`.
 

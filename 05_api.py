@@ -11,6 +11,7 @@ externo compatível com a API OpenAI (LLM_BASE_URL + LLM_MODEL).
 import asyncio
 import json
 import logging
+import math
 import os
 import re
 import threading
@@ -55,6 +56,7 @@ RETENCAO_DIAS = int(os.environ.get("RETENCAO_DIAS", 90))
 SEM_PALESTRA = "-"  # pergunta geral (não é "Resumo com IA" de uma palestra)
 # métricas de uso: uma linha por pergunta em data/metricas/AAAA-MM-DD.jsonl, sem texto da pergunta nem IP
 METRICAS = Path(__file__).parent / "data" / "metricas"
+BRT = timezone(timedelta(hours=-3))  # o dia das métricas é o de Brasília, não o UTC
 _trava_metricas = threading.Lock()
 ARQ_VERSAO = Path(__file__).parent / "data" / "versao_indice.txt"
 
@@ -365,7 +367,7 @@ def preparar_historico(wv):
 
 def registrar(rota, q, inicio, status, cache=False, sem_resposta=False):
     """Métrica anônima de uma pergunta: rota, idioma, status, cache, sem resposta, resumo e duração."""
-    ev = {"ts": datetime.now(timezone.utc).isoformat(timespec="seconds"), "rota": rota,
+    ev = {"ts": datetime.now(BRT).isoformat(timespec="seconds"), "rota": rota,
           "idioma": q.idioma or detectar_idioma(q.pergunta), "status": status, "cache": cache,
           "sem_resposta": sem_resposta, "resumo": bool(q.palestra_id), "ms": round((time.monotonic() - inicio) * 1000)}
     try:
@@ -377,18 +379,31 @@ def registrar(rota, q, inicio, status, cache=False, sem_resposta=False):
         log.exception("falha ao registrar métrica")
 
 
+def ler_metricas(dia):
+    """Eventos de um dia; linha corrompida (queda no meio da escrita) é ignorada."""
+    arq, eventos = METRICAS / f"{dia}.jsonl", []
+    for linha in arq.read_text().splitlines() if arq.exists() else []:
+        try:
+            eventos.append(json.loads(linha))
+        except ValueError:
+            continue
+    return eventos
+
+
 def resumo(eventos):
-    ok = sorted(e["ms"] for e in eventos if e["status"] == 200 and not e["cache"])  # tempo de quem gerou
-    pct = lambda p: round(ok[int(p * (len(ok) - 1))] / 1000, 1) if ok else None  # noqa: E731
+    # tempo de quem gerou: sem cache e com fontes (sem fontes o stream nem chama o LLM)
+    ok = sorted(e["ms"] for e in eventos if e["status"] == 200 and not e["cache"] and not e["sem_resposta"])
+    pct = lambda p: round(ok[min(len(ok) - 1, math.ceil(p * len(ok)) - 1)] / 1000, 1) if ok else None  # noqa: E731
     return {"perguntas": len(eventos), "idiomas": dict(Counter(e["idioma"] for e in eventos)),
             "reaproveitadas": sum(e["cache"] for e in eventos), "resumos": sum(e["resumo"] for e in eventos),
             "sem_resposta": sum(e["sem_resposta"] for e in eventos),
             "ocupado_429": sum(e["status"] == 429 for e in eventos),
+            "desistencias": sum(e["status"] == 499 for e in eventos),  # fechou a página no meio
             "erros": sum(e["status"] >= 500 for e in eventos), "p50_s": pct(0.5), "p95_s": pct(0.95)}
 
 
 def expurgar():
-    limite = datetime.now(timezone.utc) - timedelta(days=RETENCAO_DIAS)
+    limite = datetime.now(BRT) - timedelta(days=RETENCAO_DIAS)
     for arq in METRICAS.glob("*.jsonl") if METRICAS.exists() else []:
         if arq.stem < limite.date().isoformat():
             arq.unlink()
@@ -551,14 +566,18 @@ async def ask_stream(q: Pergunta):
     # o corpo do stream só roda depois do handler: a vaga é tomada aqui, senão o 429 nunca dispara
     await GERACOES.acquire()
     vaga = [True]  # liberar() roda no fim do corpo e no background: só a primeira vez solta
+    # 499 = o cliente saiu antes do fim (inclusive antes de o corpo começar); vira 200 no fim, 500 em falha
+    m = {"status": 499, "cache": False, "sem_resposta": False, "registrado": False}
 
     def liberar():
         if vaga:
             vaga.pop()
             GERACOES.release()
+        if not m["registrado"]:  # também quando o cliente cai antes de o corpo começar
+            m["registrado"] = True
+            registrar("stream", q, inicio, m["status"], m["cache"], m["sem_resposta"])
 
     async def eventos():
-        m = {"status": 500, "cache": False, "sem_resposta": False}  # vira 200 ao chegar ao fim
         try:
             yield sse("etapa", {"etapa": "buscando"})
             try:
@@ -598,9 +617,11 @@ async def ask_stream(q: Pergunta):
             texto = limpar("".join(resposta))
             await lembrar(q, idioma, vetor, texto, fontes)
             yield sse("fim", {"resposta": texto, "idioma": idioma, "reaproveitada": False})
+        except Exception:
+            m["status"] = 500
+            raise
         finally:
             liberar()
-            registrar("stream", q, inicio, m["status"], m["cache"], m["sem_resposta"])
 
     # sem buffer no caminho (proxy/túnel), para os tokens chegarem na hora
     # background libera a vaga se o corpo nunca chegar a ser iterado
@@ -610,13 +631,13 @@ async def ask_stream(q: Pergunta):
 
 @app.get("/stats")
 def stats(dias: int = Query(7, ge=1, le=90)):
-    """Uso por dia nos últimos `dias` (UTC): perguntas, idiomas, reaproveitadas, sem resposta, 429, erros, p50/p95."""
-    hoje = datetime.now(timezone.utc).date()
+    """Uso por dia (de Brasília) nos últimos `dias`: perguntas, idiomas, reaproveitadas, sem resposta, 429,
+    desistências, erros, p50/p95."""
+    hoje = datetime.now(BRT).date()
     por_dia, todos = [], []
     for i in range(dias - 1, -1, -1):
         dia = (hoje - timedelta(days=i)).isoformat()
-        arq = METRICAS / f"{dia}.jsonl"
-        eventos = [json.loads(linha) for linha in arq.read_text().splitlines() if linha] if arq.exists() else []
+        eventos = ler_metricas(dia)
         todos += eventos
         por_dia.append({"dia": dia} | resumo(eventos))
     return {"dias": por_dia, "total": resumo(todos)}
