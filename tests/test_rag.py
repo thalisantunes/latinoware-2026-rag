@@ -142,3 +142,13 @@ def test_ask_stream():
     assert sem_tokens == ["etapa", "fontes", "etapa", "fim"]
     assert eventos.count("token") > 1
     assert "home assistant" in ultimo["resposta"].lower()
+
+
+@pytest.mark.skipif(not api_no_ar(), reason="API fora do ar")
+def test_trecho_fora_da_grade():
+    # o trecho que responde não tem palestra alinhada: a resposta deve dar espaço, dia e instante
+    d = httpx.post(f"{API_URL}/ask", json={"pergunta": "Quem falou sobre Nova Porteirinha?"}, timeout=300).json()
+    assert any(f["fonte"] == "transcricao" and f["palestra_id"] is None and f["url_video"] for f in d["fontes"])
+    assert re.search(r"\b\d:\d{2}:\d{2}\b", d["resposta"])
+    assert "paraguai" in d["resposta"].lower()
+    assert "fora da grade" not in d["resposta"].lower()

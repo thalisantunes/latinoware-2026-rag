@@ -19,6 +19,7 @@
       perguntaRotulo: "Pergunte sobre as palestras", enviar: "Perguntar", aguarde: "Buscando e escrevendo a resposta…",
       ocupado: "Muitas perguntas agora. Tente de novo em instantes.", demorou: "A resposta demorou demais. Tente de novo.",
       erro: "Não foi possível responder agora.", fontes: "Fontes", video: "Vídeo",
+      copiar: "Copiar resposta", compartilhar: "Compartilhar", copiado: "Resposta copiada.", linkCopiado: "Link copiado.", naoCopiou: "Não foi possível copiar.",
     },
     en: {
       busca: "Search", buscaPh: "title, speaker, topic…", data: "Day", espaco: "Room", trilha: "Track",
@@ -31,6 +32,7 @@
       perguntaRotulo: "Ask about the talks", enviar: "Ask", aguarde: "Searching and writing the answer…",
       ocupado: "Too many questions right now. Try again shortly.", demorou: "The answer took too long. Try again.",
       erro: "Could not answer right now.", fontes: "Sources", video: "Video",
+      copiar: "Copy answer", compartilhar: "Share", copiado: "Answer copied.", linkCopiado: "Link copied.", naoCopiou: "Could not copy.",
     },
     es: {
       busca: "Buscar", buscaPh: "título, ponente, tema…", data: "Día", espaco: "Espacio", trilha: "Temática",
@@ -43,6 +45,7 @@
       perguntaRotulo: "Pregunta sobre las charlas", enviar: "Preguntar", aguarde: "Buscando y escribiendo la respuesta…",
       ocupado: "Demasiadas preguntas ahora. Inténtalo de nuevo en breve.", demorou: "La respuesta tardó demasiado. Inténtalo de nuevo.",
       erro: "No se pudo responder ahora.", fontes: "Fuentes", video: "Video",
+      copiar: "Copiar respuesta", compartilhar: "Compartir", copiado: "Respuesta copiada.", linkCopiado: "Enlace copiado.", naoCopiou: "No se pudo copiar.",
     },
   };
 
@@ -87,6 +90,7 @@
     .ia .resp { white-space: pre-wrap; margin: 12px 0 0; }
     .ia ol { margin: 8px 0 0; padding-left: 1.4em; font-size: .9rem; }
     .msg { color: var(--m); }
+    .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
     @media (prefers-reduced-motion: no-preference) { article { transition: border-color .15s; } }
   `;
 
@@ -179,7 +183,7 @@
 
       let html = `<style>${CSS}</style>`;
       if (api) html += `<form class="ia" part="ia"><label>${esc(t.perguntaRotulo)}<textarea name="q" required minlength="3" maxlength="1000"></textarea></label>
-        <div class="linha"><span></span><button class="pri" type="submit">${esc(t.enviar)}</button></div><div class="out"></div></form>`;
+        <div class="linha"><span></span><button class="pri" type="submit">${esc(t.enviar)}</button></div><div class="out"></div><p class="sr" role="status"></p></form>`;
       html += `<div class="filtros" part="filtros">
         <label class="busca">${esc(t.busca)}<input type="search" name="busca" placeholder="${esc(t.buscaPh)}"></label>
         <label>${esc(t.data)}<select name="data">${opcoes(d.evento.datas, dia)}</select></label>
@@ -231,7 +235,11 @@
         };
         raiz.addEventListener("click", this.cliques);
       }
-      if (api) raiz.querySelector(".ia").addEventListener("submit", e => { e.preventDefault(); this.enviar(); });
+      if (api) {
+        const f = raiz.querySelector(".ia");
+        f.addEventListener("submit", e => { e.preventDefault(); this.enviar(); });
+        f.q.value = (q.get(P + "pergunta") || "").slice(0, 1000);
+      }
       this.filtrar(false);
       this.irPara(location.hash);
     }
@@ -292,6 +300,26 @@
       this.enviar();
     }
 
+    // copiar (resposta + fontes em texto) e compartilhar (Web Share ou link copiado), com aviso para leitor de tela
+    partilha(out, pergunta, resposta, fontes) {
+      const t = this.t, aviso = this.shadowRoot.querySelector(".ia .sr");
+      const avisar = msg => { aviso.textContent = ""; setTimeout(() => { aviso.textContent = msg; }, 50); };
+      const copiar = (texto, ok) => Promise.resolve().then(() => navigator.clipboard.writeText(texto))
+        .then(() => avisar(ok), () => avisar(t.naoCopiou));
+      const caixa = document.createElement("div");
+      caixa.className = "acoes";
+      caixa.innerHTML = `<button type="button" class="sec">${esc(t.copiar)}</button><button type="button" class="sec">${esc(t.compartilhar)}</button>`;
+      const [bCopiar, bPartilhar] = caixa.children;
+      bCopiar.onclick = () => copiar(`${pergunta}\n\n${resposta}\n\n${fontes}`, t.copiado);
+      const link = new URL(location.href);
+      link.searchParams.set(P + "pergunta", pergunta); // quem abrir o link encontra a pergunta preenchida
+      bPartilhar.onclick = () => navigator.share
+        ? navigator.share({ title: document.title, text: pergunta, url: link.href })
+          .catch(e => { if (e.name !== "AbortError") copiar(link.href, t.linkCopiado); })
+        : copiar(link.href, t.linkCopiado);
+      out.querySelector(".resp").after(caixa);
+    }
+
     async enviar() {
       const t = this.t, f = this.shadowRoot.querySelector(".ia"), out = f.querySelector(".out");
       const pergunta = f.q.value.trim();
@@ -299,11 +327,12 @@
       this.ocupado = true;
       out.innerHTML = `<p class="msg">${esc(t.aguarde)}</p><p class="resp"></p><div class="fts"></div>`;
       const resp = out.querySelector(".resp"), fts = out.querySelector(".fts");
-      const listar = fontes => `<h2>${esc(t.fontes)}</h2><ol>${fontes.map(s => {
+      let dadosFontes = [];
+      const listar = fontes => (dadosFontes = fontes, `<h2>${esc(t.fontes)}</h2><ol>${fontes.map(s => {
         const link = s.url_video ? `<a href="${url(s.url_video)}" target="_blank" rel="noopener">▶ ${esc(t.video)} ${hms(+s.video_t || 0)}</a>`
           : `<a href="${url(s.url)}">${esc(/^https?:\/\/([^/]+)/i.exec(s.url || "")?.[1] || s.url)}</a>`;
         return `<li>${esc(s.titulo)}${s.palestrantes ? ` (${esc(s.palestrantes)})` : ""} · ${link}</li>`;
-      }).join("")}</ol>`;
+      }).join("")}</ol>`);
       const pedir = rota => fetch(`${this.getAttribute("api").replace(/\/$/, "")}${rota}`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pergunta, idioma: this.idioma }), signal: AbortSignal.timeout(90000) });
@@ -335,6 +364,8 @@
         out.querySelector(".msg").remove();
         resp.lang = d.idioma || "";
         resp.textContent = d.resposta;
+        this.partilha(out, pergunta, d.resposta, `${t.fontes}:\n${dadosFontes.map(s =>
+          `[${s.n}] ${s.titulo}${s.palestrantes ? ` (${s.palestrantes})` : ""} ${s.url_video || s.url}`).join("\n")}`);
       } catch (e) {
         const msg = e.name === "TimeoutError" ? t.demorou : e.message === "ocupado" ? t.ocupado : t.erro;
         out.innerHTML = `<p class="msg" role="alert">${esc(msg)}</p>`;

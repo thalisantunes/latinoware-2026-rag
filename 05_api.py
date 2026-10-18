@@ -44,15 +44,21 @@ INSTRUCOES = {
     "pt": ("Você responde perguntas sobre a Latinoware 2026 (Foz do Iguaçu, 14 a 16 de outubro "
            "de 2026) usando SOMENTE os trechos numerados abaixo. Responda em português do Brasil. "
            "Cite as fontes com [n]. Se os trechos não trazem a resposta, diga que não encontrou "
-           "essa informação nas palestras indexadas."),
+           "essa informação nas palestras indexadas. Se o trecho que responde não tem palestrante "
+           "identificado, diga isso, informe o espaço e o dia e sugira ouvir o vídeo a partir do "
+           "instante indicado (h:mm:ss)."),
     "en": ("You answer questions about Latinoware 2026 (Foz do Iguaçu, Brazil, October 14-16, "
            "2026) using ONLY the numbered excerpts below, which may be in Portuguese. Answer in "
            "English. Cite sources as [n]. If the excerpts do not contain the answer, say you could "
-           "not find it in the indexed talks."),
+           "not find it in the indexed talks. If the excerpt that answers has no identified speaker, "
+           "say so, give the room and the day, and suggest listening to the video from the given "
+           "time (h:mm:ss)."),
     "es": ("Respondes preguntas sobre Latinoware 2026 (Foz do Iguaçu, Brasil, 14 al 16 de octubre "
            "de 2026) usando SOLO los fragmentos numerados abajo, que pueden estar en portugués. "
            "Responde en español. Cita las fuentes con [n]. Si los fragmentos no contienen la "
-           "respuesta, di que no la encontraste en las charlas indexadas."),
+           "respuesta, di que no la encontraste en las charlas indexadas. Si el fragmento que "
+           "responde no tiene ponente identificado, dilo, indica el espacio y el día y sugiere "
+           "escuchar el video desde el instante indicado (h:mm:ss)."),
 }
 # lembrete no fim do prompt: com a pergunta em outra língua, só a instrução de sistema não basta
 LEMBRETE = {"pt": "Responda em português do Brasil.", "en": "Answer in English.",
@@ -190,6 +196,19 @@ async def ask(q: Pergunta):
         return await responder(q)
 
 
+def hms(s):
+    return f"{s // 3600}:{s // 60 % 60:02d}:{s % 60:02d}"
+
+
+def cabecalho(t):
+    if t["fonte"] != "transcricao":
+        return f"{t['palestra_titulo']} | {t['palestrantes']} | fonte: {t['fonte']}"
+    quando = f"{t['espaco']}, dia {t['inicio'][8:10]}/{t['inicio'][5:7]}, vídeo a partir de {hms(t['inicio_video_s'])}"
+    if not t["palestra_id"]:  # fora da grade: sem título nem palestrante, o modelo inventava um
+        return f"trecho de vídeo sem palestra nem palestrante identificados | {quando}"
+    return f"{t['palestra_titulo']} | {t['palestrantes']} | transcrição: {quando}"
+
+
 async def preparar(q):
     """Idioma, prompt (sistema, usuário) e fontes; a geração fica para quem chama."""
     idioma = q.idioma or detectar_idioma(q.pergunta)
@@ -198,9 +217,7 @@ async def preparar(q):
     except Exception:
         log.exception("falha na busca")
         raise HTTPException(503, "busca indisponível") from None
-    contexto = "\n\n".join(
-        f"[{i}] {t['palestra_titulo']} | {t['palestrantes']} | fonte: {t['fonte']}\n{t['texto']}"
-        for i, t in enumerate(trechos, 1))
+    contexto = "\n\n".join(f"[{i}] {cabecalho(t)}\n{t['texto']}" for i, t in enumerate(trechos, 1))
     prompt = (INSTRUCOES[idioma], f"Trechos:\n{contexto}\n\nPergunta: {q.pergunta}\n\n{LEMBRETE[idioma]}")
     # transcrições servem de contexto, mas não são devolvidas: só título, autor e link com tempo
     fontes = [{"n": i, "titulo": t["palestra_titulo"], "palestrantes": t["palestrantes"],
