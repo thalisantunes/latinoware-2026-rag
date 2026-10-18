@@ -15,12 +15,14 @@ import os
 import re
 import threading
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import httpx
 import uvicorn
 import weaviate
-from weaviate.classes.query import Filter
+from weaviate.classes.config import Configure, DataType, Property
+from weaviate.classes.query import Filter, MetadataQuery, Sort
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -43,6 +45,13 @@ RERANK_MODEL = os.environ.get("RERANK_MODEL", "bge-reranker-v2-m3")
 # na GPU (RERANK_LOCAL) vão todos os candidatos inteiros (~0,25 s para 32)
 RERANK_TOP = int(os.environ.get("RERANK_TOP", 16))
 _reranker, _trava_reranker = None, threading.Lock()  # _reranker = False: a carga falhou, não tenta de novo
+# histórico de perguntas (coleção Pergunta): sem IP nem user agent; reaproveita resposta de pergunta igual
+# (distância bge-m3 ≤ CACHE_DIST: variações de pontuação e caixa ficam abaixo de 0,03; perguntas diferentes
+# medidas ficaram acima de 0,09) e apaga o que tiver mais de RETENCAO_DIAS
+CACHE_DIST = float(os.environ.get("CACHE_DIST", 0.05))
+RETENCAO_DIAS = int(os.environ.get("RETENCAO_DIAS", 90))
+VERSAO_INDICE = ((Path(__file__).parent / "data" / "versao_indice.txt").read_text().strip()
+                 if (Path(__file__).parent / "data" / "versao_indice.txt").exists() else "0")
 CORS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "https://ilove.the.br,https://www.ilove.the.br,https://rede-cidades.pages.dev,https://latinoware.org,https://www.latinoware.org,http://localhost:8765").split(",")]
 MAX_TOKENS = int(os.environ.get("LLM_MAX_TOKENS", 800))
 # sem limite, uma palestra longa e bem transcrita ocupava 7 das 8 fontes
@@ -120,6 +129,7 @@ class Pergunta(BaseModel):
     k: int = Field(default=8, ge=1, le=12)
     # "Resumo com IA" de uma palestra: usa só os trechos dela, sem busca
     palestra_id: str | None = Field(default=None, pattern=r"^[\w-]{1,40}$")
+    novo: bool = False  # "Gerar de novo": ignora a resposta guardada
 
 
 @asynccontextmanager
@@ -129,7 +139,10 @@ async def lifespan(app):
     app.state.http = httpx.AsyncClient(timeout=180)
     if RERANK_LOCAL:  # carrega na subida, não na primeira pergunta (download de ~2 GB na 1ª vez)
         app.state.carga_reranker = asyncio.create_task(asyncio.to_thread(reranker_local))  # referência evita o GC
+    preparar_historico(app.state.wv)
+    app.state.expurgo = asyncio.create_task(expurgar_sempre())  # referência evita o GC
     yield
+    app.state.expurgo.cancel()
     app.state.wv.close()
     await app.state.http.aclose()
 
@@ -295,6 +308,67 @@ async def ask(q: Pergunta):
         return await responder(q)
 
 
+def preparar_historico(wv):
+    if wv.collections.exists("Pergunta"):
+        return
+    texto = lambda n, busca=True: Property(name=n, data_type=DataType.TEXT,  # noqa: E731
+                                           index_searchable=busca, index_filterable=True)
+    wv.collections.create("Pergunta", vector_config=Configure.Vectors.self_provided(), properties=[
+        texto("pergunta"), texto("idioma", False), texto("resposta"), texto("fontes", False), texto("modelo", False),
+        texto("palestra_id", False), texto("versao_indice", False),
+        Property(name="criado_em", data_type=DataType.DATE), Property(name="reutilizacoes", data_type=DataType.INT)])
+
+
+def expurgar():
+    limite = datetime.now(timezone.utc) - timedelta(days=RETENCAO_DIAS)
+    r = app.state.wv.collections.get("Pergunta").data.delete_many(where=Filter.by_property("criado_em").less_than(limite))
+    if r.successful:
+        log.info(f"histórico: {r.successful} perguntas com mais de {RETENCAO_DIAS} dias apagadas")
+
+
+async def expurgar_sempre():
+    while True:
+        try:
+            await asyncio.to_thread(expurgar)
+        except Exception:
+            log.exception("falha no expurgo do histórico")
+        await asyncio.sleep(24 * 3600)
+
+
+def filtro_igual(q, idioma):
+    """Só reaproveita no mesmo idioma, modelo, índice e palestra (resumo de uma palestra é outra pergunta)."""
+    return (Filter.by_property("idioma").equal(idioma) & Filter.by_property("modelo").equal(LLM_MODEL)
+            & Filter.by_property("versao_indice").equal(VERSAO_INDICE)
+            & Filter.by_property("palestra_id").equal(q.palestra_id or ""))
+
+
+def do_historico(q, idioma, vetor):
+    col = app.state.wv.collections.get("Pergunta")
+    res = col.query.near_vector(vetor, limit=1, distance=CACHE_DIST, filters=filtro_igual(q, idioma),
+                                return_metadata=MetadataQuery(distance=True))
+    if not res.objects:
+        return None
+    o = res.objects[0]
+    col.data.update(o.uuid, properties={"reutilizacoes": o.properties["reutilizacoes"] + 1})
+    return {"resposta": o.properties["resposta"], "idioma": idioma, "fontes": json.loads(o.properties["fontes"]),
+            "reaproveitada": True, "criado_em": o.properties["criado_em"].isoformat()}
+
+
+def guardar(q, idioma, vetor, resposta, fontes):
+    if resposta and fontes:  # sem resposta não há o que reaproveitar
+        app.state.wv.collections.get("Pergunta").data.insert(vector=vetor, properties={
+            "pergunta": q.pergunta, "idioma": idioma, "resposta": resposta, "fontes": json.dumps(fontes),
+            "modelo": LLM_MODEL, "palestra_id": q.palestra_id or "", "versao_indice": VERSAO_INDICE,
+            "criado_em": datetime.now(timezone.utc), "reutilizacoes": 0})
+
+
+async def lembrar(q, idioma, vetor, resposta, fontes):
+    try:  # o histórico nunca derruba a resposta
+        await asyncio.to_thread(guardar, q, idioma, vetor, resposta, fontes)
+    except Exception:
+        log.exception("falha ao guardar no histórico")
+
+
 def hms(s):
     return f"{s // 3600}:{s // 60 % 60:02d}:{s % 60:02d}"
 
@@ -309,15 +383,29 @@ def cabecalho(t):
 
 
 async def passos(q):
-    """Prepara a resposta em passos: ("etapa", nome) para o stream e, no fim, ("pronto", (idioma, prompt,
-    fontes)). A geração fica para quem chama."""
+    """Prepara a resposta em passos: ("etapa", nome) para o stream e, no fim, ("cache", resposta guardada) ou
+    ("pronto", (idioma, prompt, fontes, vetor)). A geração fica para quem chama."""
     idioma = q.idioma or detectar_idioma(q.pergunta)
+    try:
+        vetor = await embed(q.pergunta)
+    except Exception:
+        log.exception("falha no embedding")
+        raise HTTPException(503, "busca indisponível") from None
+    if not q.novo:
+        try:
+            guardada = await asyncio.to_thread(do_historico, q, idioma, vetor)
+        except Exception:
+            log.exception("falha no histórico; segue sem ele")
+            guardada = None
+        if guardada:
+            yield "cache", guardada
+            return
     try:
         if q.palestra_id:
             trechos = await asyncio.to_thread(da_palestra, q.palestra_id, max(q.k, 12))
         else:
             achados = await asyncio.to_thread(candidatos, app.state.wv.collections.get("Trecho"), q.pergunta,
-                                              await embed(q.pergunta), q.k)
+                                              vetor, q.k)
             if RERANK_LOCAL or RERANK_URL:
                 yield "etapa", "reordenando"
                 achados = await asyncio.to_thread(reordenar, q.pergunta, achados)
@@ -338,23 +426,27 @@ async def passos(q):
                "palestra_id": t["palestra_id"] or None,
                "inicio_video_s": t["inicio_video_s"] if t["video_id"] else None}
               for i, t in enumerate(trechos, 1)]
-    yield "pronto", (idioma, prompt, fontes)
+    yield "pronto", (idioma, prompt, fontes, vetor)
 
 
 async def preparar(q):
     async for tipo, valor in passos(q):
-        if tipo == "pronto":
-            return valor
+        if tipo in ("pronto", "cache"):
+            return tipo, valor
 
 
 async def responder(q):
-    idioma, prompt, fontes = await preparar(q)
+    tipo, valor = await preparar(q)
+    if tipo == "cache":
+        return valor
+    idioma, prompt, fontes, vetor = valor
     try:
         resposta = limpar(await gerar(*prompt))
     except Exception:
         log.exception("falha no LLM")
         raise HTTPException(503, "gerador de respostas indisponível") from None
-    return {"resposta": resposta, "idioma": idioma, "fontes": fontes}
+    await lembrar(q, idioma, vetor, resposta, fontes)
+    return {"resposta": resposta, "idioma": idioma, "fontes": fontes, "reaproveitada": False}
 
 
 def sse(evento, dados):
@@ -381,8 +473,13 @@ async def ask_stream(q: Pergunta):
                 async for tipo, valor in passos(q):
                     if tipo == "etapa":
                         yield sse("etapa", {"etapa": valor})
+                    elif tipo == "cache":  # pergunta igual já respondida: sem GPU
+                        yield sse("etapa", {"etapa": "reaproveitando"})
+                        yield sse("fontes", {"fontes": valor["fontes"], "idioma": valor["idioma"]})
+                        yield sse("fim", valor)
+                        return
                     else:
-                        idioma, prompt, fontes = valor
+                        idioma, prompt, fontes, vetor = valor
             except HTTPException as e:
                 yield sse("erro", {"status": e.status_code, "detalhe": e.detail})
                 return
@@ -401,7 +498,9 @@ async def ask_stream(q: Pergunta):
                 log.exception("falha no LLM")
                 yield sse("erro", {"status": 503, "detalhe": "gerador de respostas indisponível"})
                 return
-            yield sse("fim", {"resposta": limpar("".join(resposta)), "idioma": idioma})
+            texto = limpar("".join(resposta))
+            await lembrar(q, idioma, vetor, texto, fontes)
+            yield sse("fim", {"resposta": texto, "idioma": idioma, "reaproveitada": False})
         finally:
             liberar()
 
@@ -409,6 +508,18 @@ async def ask_stream(q: Pergunta):
     # background libera a vaga se o corpo nunca chegar a ser iterado
     return StreamingResponse(eventos(), media_type="text/event-stream", background=BackgroundTask(liberar),
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.get("/frequentes")
+def frequentes(idioma: str = "pt"):
+    """As 8 perguntas mais reaproveitadas; só as feitas mais de uma vez, para não expor pergunta de uma pessoa só."""
+    if idioma not in INSTRUCOES:
+        raise HTTPException(422, "idioma deve ser pt, en ou es")
+    res = app.state.wv.collections.get("Pergunta").query.fetch_objects(
+        limit=8, sort=Sort.by_property("reutilizacoes", ascending=False),
+        filters=Filter.by_property("idioma").equal(idioma) & Filter.by_property("versao_indice").equal(VERSAO_INDICE)
+        & Filter.by_property("palestra_id").equal("") & Filter.by_property("reutilizacoes").greater_or_equal(1))
+    return [{"pergunta": o.properties["pergunta"], "vezes": o.properties["reutilizacoes"] + 1} for o in res.objects]
 
 
 @app.get("/health")
