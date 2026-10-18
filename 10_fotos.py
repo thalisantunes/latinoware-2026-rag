@@ -22,6 +22,7 @@ os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
 import re
 import sys
 from pathlib import Path
+from urllib.parse import urljoin, urlparse
 
 import httpx
 
@@ -36,7 +37,17 @@ LIMIAR = float(os.environ.get("FOTOS_LIMIAR", 0.45))
 DUVIDA = float(os.environ.get("FOTOS_DUVIDA", 0.55))  # entre LIMIAR e DUVIDA: vai para a lista de dúvidas
 # códigos de licença do Flickr (flickr.photos.licenses.getInfo)
 LICENCAS = {"0": "Todos os direitos reservados", "1": "CC BY-NC-SA 2.0", "2": "CC BY-NC 2.0", "3": "CC BY-NC-ND 2.0",
-            "4": "CC BY 2.0", "5": "CC BY-SA 2.0", "6": "CC BY-ND 2.0", "9": "CC0", "10": "Domínio público"}
+            "4": "CC BY 2.0", "5": "CC BY-SA 2.0", "6": "CC BY-ND 2.0", "7": "Sem restrições de direitos conhecidas",
+            "8": "Obra do governo dos EUA", "9": "CC0", "10": "Domínio público"}
+
+
+def baixar(cli, url, destino):
+    """Grava só se a resposta for uma imagem; erro HTTP ou página de erro não viram foto."""
+    r = cli.get(url)
+    r.raise_for_status()
+    if not r.headers.get("content-type", "").startswith("image/"):
+        raise ValueError(f"{url}: não é imagem ({r.headers.get('content-type')})")
+    destino.write_bytes(r.content)
 
 
 def referencias():
@@ -52,12 +63,42 @@ def referencias():
             if not m:
                 faltam.append(s["nome"])
                 continue
-            destino = REFS / f"{s['id']}{Path(m[1]).suffix.lower() or '.jpg'}"
-            if not destino.exists():
-                destino.write_bytes(cli.get(m[1]).content)
-            refs[str(s["id"])] = {"url_foto": m[1], "arquivo": destino.name}
+            foto = urljoin(s["url"], m[1])  # src relativo ou com ?ver= também vale
+            destino = REFS / f"{s['id']}{Path(urlparse(foto).path).suffix.lower() or '.jpg'}"
+            try:
+                if not destino.exists():
+                    baixar(cli, foto, destino)
+            except (httpx.HTTPError, ValueError) as e:  # uma foto ruim não derruba as outras
+                faltam.append(f"{s['nome']} ({e})")
+                continue
+            refs[str(s["id"])] = {"url_foto": foto, "arquivo": destino.name}
     (FOTOS / "referencias.json").write_text(json.dumps(refs, ensure_ascii=False, indent=1))
     print(f"referências: {len(refs)} de {len(pessoas)} palestrantes; sem foto: {len(faltam)}")
+
+
+def coletar_album(cli, chave, album, fotos):
+    """Fotos novas de um álbum do Flickr: metadados em `fotos` e foto média em data/fotos/flickr/."""
+    album_id, pagina, novas = re.search(r"(\d{10,})", album)[1], 1, 0
+    while True:
+        r = cli.get("https://api.flickr.com/services/rest/", params={
+            "method": "flickr.photosets.getPhotos", "api_key": chave, "photoset_id": album_id,
+            "extras": "license,owner_name,url_q,url_m,date_taken", "per_page": 500, "page": pagina,
+            "format": "json", "nojsoncallback": 1}).json()
+        if r.get("stat") != "ok":
+            raise ValueError(f"Flickr: {r.get('message')}")
+        conjunto = r["photoset"]
+        for f in conjunto["photo"]:
+            if f["id"] in fotos or not f.get("url_m"):
+                continue
+            baixar(cli, f["url_m"], FLICKR / f"{f['id']}.jpg")
+            fotos[f["id"]] = {"id": f["id"], "titulo": f.get("title", ""), "autor": conjunto.get("ownername", ""),
+                              "licenca": f.get("license"), "url_thumb": f.get("url_q"),
+                              "url_pagina": f"https://www.flickr.com/photos/{conjunto['owner']}/{f['id']}/",
+                              "album": conjunto.get("title", album_id), "data": f.get("datetaken")}
+            novas += 1
+        if pagina >= int(conjunto["pages"]):
+            return novas
+        pagina += 1
 
 
 def flickr(albuns):
@@ -68,42 +109,26 @@ def flickr(albuns):
     FLICKR.mkdir(parents=True, exist_ok=True)
     arq = FOTOS / "flickr.json"
     fotos = json.loads(arq.read_text()) if arq.exists() else {}
-    novas = 0
-    with httpx.Client(timeout=60) as cli:
-        for album in albuns:
-            album_id = re.search(r"(\d{10,})", album)[1]
-            pagina = 1
-            while True:
-                r = cli.get("https://api.flickr.com/services/rest/", params={
-                    "method": "flickr.photosets.getPhotos", "api_key": chave, "photoset_id": album_id,
-                    "extras": "license,owner_name,url_q,url_m,date_taken", "per_page": 500, "page": pagina,
-                    "format": "json", "nojsoncallback": 1}).json()
-                if r.get("stat") != "ok":
-                    sys.exit(f"Flickr: {r.get('message')}")
-                conjunto = r["photoset"]
-                for f in conjunto["photo"]:
-                    if f["id"] in fotos or not f.get("url_m"):
-                        continue
-                    (FLICKR / f"{f['id']}.jpg").write_bytes(cli.get(f["url_m"]).content)
-                    fotos[f["id"]] = {"id": f["id"], "titulo": f.get("title", ""), "autor": conjunto.get("ownername", ""),
-                                      "licenca": f.get("license"), "url_thumb": f.get("url_q"),
-                                      "url_pagina": f"https://www.flickr.com/photos/{conjunto['owner']}/{f['id']}/",
-                                      "album": conjunto.get("title", album_id), "data": f.get("datetaken")}
-                    novas += 1
-                if pagina >= int(conjunto["pages"]):
-                    break
-                pagina += 1
-    arq.write_text(json.dumps(fotos, ensure_ascii=False, indent=1))
-    print(f"flickr: {novas} fotos novas, {len(fotos)} no total")
+    antes = len(fotos)
+    try:
+        with httpx.Client(timeout=60) as cli:
+            for album in albuns:
+                coletar_album(cli, chave, album, fotos)
+    finally:  # o que já foi baixado fica registrado mesmo se um álbum falhar no meio
+        arq.write_text(json.dumps(fotos, ensure_ascii=False, indent=1))
+    print(f"flickr: {len(fotos) - antes} fotos novas, {len(fotos)} no total")
 
 
 def vetores_de(caminho):
-    """Vetores faciais de uma imagem: [(vetor, área do rosto)]; lista vazia se não há rosto."""
+    """Vetores faciais de uma imagem: [(vetor, área do rosto)]; lista vazia se não há rosto.
+    Imagem ilegível levanta erro: não é guardada como "sem rosto" e entra de novo na próxima rodada."""
     from deepface import DeepFace
     try:
         faces = DeepFace.represent(str(caminho), model_name=MODELO, detector_backend=DETECTOR, align=True)
-    except ValueError:  # nenhum rosto detectado
-        return []
+    except ValueError as e:
+        if "could not be detected" in str(e):
+            return []
+        raise
     return [(f["embedding"], f["facial_area"]["w"] * f["facial_area"]["h"]) for f in faces]
 
 
@@ -111,7 +136,9 @@ def guardar(nome, dados):
     import numpy as np
     VETORES.mkdir(parents=True, exist_ok=True)
     VETORES.chmod(0o700)
-    np.save(VETORES / f"{nome}.npy", np.array(dados, dtype=object), allow_pickle=True)
+    arq = VETORES / f"{nome}.npy"
+    np.save(arq, np.array(dados, dtype=object), allow_pickle=True)
+    arq.chmod(0o600)
 
 
 def carregar(nome):
@@ -137,13 +164,22 @@ def casar():
     guardar("referencias", vet_refs)
     vet_fotos = carregar("flickr")
     novas = [fid for fid in fotos if fid not in vet_fotos]  # incremental: só fotos ainda não vistas
-    for fid in novas:
-        vet_fotos[fid] = vetores_de(FLICKR / f"{fid}.jpg")
-    guardar("flickr", vet_fotos)
+    try:
+        for i, fid in enumerate(novas, 1):
+            try:
+                vet_fotos[fid] = vetores_de(FLICKR / f"{fid}.jpg")
+            except ValueError as e:
+                print(f"  {fid}: {e}")
+            if i % 50 == 0:  # um erro adiante não perde o que já foi calculado
+                guardar("flickr", vet_fotos)
+    finally:
+        guardar("flickr", vet_fotos)
 
     calibrar(vet_refs)
     pares, duvidas = [], []
     validos = {pid: v for pid, v in vet_refs.items() if v is not None}
+    if not validos:
+        sys.exit("nenhuma referência com rosto: rode `referencias` antes")
     for fid, faces in vet_fotos.items():
         maior = max((a for _, a in faces), default=0)
         for vetor, area in faces:
@@ -154,7 +190,15 @@ def casar():
                 pares.append({"palestrante_id": pid, "foto_id": fid, "distancia": round(d, 3)})
             elif d <= DUVIDA:
                 duvidas.append({"palestrante_id": pid, "foto_id": fid, "distancia": round(d, 3)})
-    (FOTOS / "casamentos.json").write_text(json.dumps({"pares": pares, "duvidas": duvidas}, indent=1))
+    # dois rostos da mesma foto com a mesma pessoa: fica o par de menor distância
+    melhor = {}
+    for p in sorted(pares + duvidas, key=lambda p: p["distancia"]):
+        melhor.setdefault((p["palestrante_id"], p["foto_id"]), p)
+    pares = [p for p in melhor.values() if p["distancia"] <= LIMIAR]
+    duvidas = [p for p in melhor.values() if p["distancia"] > LIMIAR]
+    arq = FOTOS / "casamentos.json"  # quem aparece em qual foto: só o dono da máquina lê
+    arq.write_text(json.dumps({"pares": pares, "duvidas": duvidas}, indent=1))
+    arq.chmod(0o600)
     print(f"casar: {len(novas)} fotos novas, {len(vet_fotos)} no total; {len(pares)} pares, {len(duvidas)} dúvidas; "
           f"referências com rosto: {len(validos)} de {len(vet_refs)}")
     print("revise em data/fotos/revisao.json: {\"<palestrante_id>:<foto_id>\": true|false}; depois `exportar`")
@@ -184,7 +228,7 @@ def exportar():
             f = fotos[p["foto_id"]]
             saida.setdefault(p["palestrante_id"], []).append({k: f[k] for k in (
                 "id", "url_pagina", "url_thumb", "autor", "licenca", "album")} | {
-                "licenca_nome": LICENCAS.get(str(f["licenca"]), "")})
+                "licenca_nome": LICENCAS[str(f["licenca"])]})  # código novo do Flickr: falha em vez de omitir
     (RAIZ / "web" / "fotos.json").write_text(json.dumps(
         {"versao": 1, "palestrantes": [{"palestrante_id": k, "fotos": v} for k, v in sorted(saida.items())]},
         ensure_ascii=False, separators=(",", ":")) + "\n")

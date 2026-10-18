@@ -217,7 +217,7 @@
           nomes.map(([u, n]) => `<option value="${esc(u)}">${esc(n)}</option>`).join("")}</select></label></div>
         <div class="linha"><label class="check"><input type="checkbox" name="video">${esc(t.soVideo)}</label>
         <button type="button" class="sec limpar">${esc(t.limpar)}</button></div>
-        <p class="cont" role="status"></p><section class="pessoa" hidden></section><p class="msg vazio" hidden>${esc(t.nenhum)}</p>`;
+        <p class="cont" role="status"></p><section class="pessoa" hidden tabindex="-1" aria-labelledby="pessoa-nome"></section><p class="msg vazio" hidden>${esc(t.nenhum)}</p>`;
       let atual = null, i = 0;
       for (const g of this.grupos) {
         if (g.data !== atual) {
@@ -261,7 +261,9 @@
             e.preventDefault();
             this.campos.palestrante.value = a.dataset.pessoa;
             this.filtrar(true);
-            this.shadowRoot.querySelector(".pessoa").scrollIntoView({ block: "start" });
+            const caixa = this.shadowRoot.querySelector(".pessoa");
+            caixa.scrollIntoView({ block: "start" });
+            caixa.focus({ preventScroll: true }); // teclado e leitor de tela vão junto para a visão
           }
         };
         raiz.addEventListener("click", this.cliques);
@@ -309,10 +311,10 @@
       if (!p) return;
       const fotos = this.fotos[String(p.id)] || [];
       caixa.innerHTML = `${p.foto ? `<img class="rosto" src="${url(p.foto)}" alt="" width="96" height="96">` : ""}
-        <div><h2>${esc(p.nome)}</h2><p class="sem">${esc([p.organizacao, p.pais].filter(Boolean).join(" · "))}</p>
+        <div><h2 id="pessoa-nome">${esc(p.nome)}</h2><p class="sem">${esc([p.organizacao, p.pais].filter(Boolean).join(" · "))}</p>
         <p><a href="${url(p.url)}">${esc(t.paginaSite)}</a></p></div>${fotos.length ? `<h3>${esc(t.fotosEvento)}</h3>
         <ul class="galeria">${fotos.map(f => `<li><a href="${url(f.url_pagina)}" target="_blank" rel="noopener"><img
-          src="${url(f.url_thumb)}" alt="${esc(t.fotoDe(p.nome))}" loading="lazy" width="150" height="150"></a>
+          src="${url(f.url_thumb)}" alt="${esc(t.fotoDe(p.nome))} (Flickr)" loading="lazy" width="150" height="150"></a>
           <small>${esc(t.foto)}: ${esc(f.autor)}/Latinoware${f.licenca_nome ? ` · ${esc(f.licenca_nome)}` : ""}</small></li>`).join("")}</ul>` : ""}
         <p class="sem">${esc(t.remover)} <a href="mailto:privacidade@ilove.the.br">privacidade@ilove.the.br</a></p>`;
     }
