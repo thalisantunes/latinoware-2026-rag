@@ -39,9 +39,10 @@ ALPHA = float(os.environ.get("HYBRID_ALPHA", 0.75))  # 0 = só BM25, 1 = só vet
 RERANK_LOCAL = os.environ.get("RERANK_LOCAL", "")
 RERANK_URL = os.environ.get("RERANK_URL", "")
 RERANK_MODEL = os.environ.get("RERANK_MODEL", "bge-reranker-v2-m3")
-# em CPU o reranker leva ~0,4 s por trecho: só os primeiros RERANK_TOP, com o texto cortado
+# no serviço em CPU o reranker leva ~0,4 s por trecho: só os primeiros RERANK_TOP, com o texto cortado;
+# na GPU (RERANK_LOCAL) vão todos os candidatos inteiros (~0,25 s para 32)
 RERANK_TOP = int(os.environ.get("RERANK_TOP", 16))
-_reranker, _trava_reranker = None, threading.Lock()
+_reranker, _trava_reranker = None, threading.Lock()  # _reranker = False: a carga falhou, não tenta de novo
 CORS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "https://ilove.the.br,https://www.ilove.the.br,https://rede-cidades.pages.dev,https://latinoware.org,https://www.latinoware.org,http://localhost:8765").split(",")]
 MAX_TOKENS = int(os.environ.get("LLM_MAX_TOKENS", 800))
 # sem limite, uma palestra longa e bem transcrita ocupava 7 das 8 fontes
@@ -126,6 +127,8 @@ async def lifespan(app):
     app.state.wv = weaviate.connect_to_local(port=int(os.environ.get("WEAVIATE_HTTP_PORT", 18080)),
                                              grpc_port=int(os.environ.get("WEAVIATE_GRPC_PORT", 15051)))
     app.state.http = httpx.AsyncClient(timeout=180)
+    if RERANK_LOCAL:  # carrega na subida, não na primeira pergunta (download de ~2 GB na 1ª vez)
+        app.state.carga_reranker = asyncio.create_task(asyncio.to_thread(reranker_local))  # referência evita o GC
     yield
     app.state.wv.close()
     await app.state.http.aclose()
@@ -224,21 +227,27 @@ def reranker_local():
     global _reranker
     with _trava_reranker:
         if _reranker is None:
-            import torch
-            from sentence_transformers import CrossEncoder
-            _reranker = CrossEncoder(RERANK_LOCAL, device="cuda", max_length=512,
-                                     model_kwargs={"dtype": torch.float16})
+            try:
+                import torch
+                from sentence_transformers import CrossEncoder
+                _reranker = CrossEncoder(RERANK_LOCAL, device="cuda", max_length=512,
+                                         model_kwargs={"dtype": torch.float16})
+            except Exception:
+                log.exception("reranker local não carregou (falta `uv sync --extra rerank`?); segue sem ele")
+                _reranker = False
         return _reranker
 
 
 def reordenar(pergunta, trechos):
     """Ordena pelo reranker; se ele falhar, segue a ordem da busca (o /ask nunca cai por isso)."""
-    topo, resto = trechos[:RERANK_TOP], trechos[RERANK_TOP:]
+    topo, resto = (trechos, []) if RERANK_LOCAL else (trechos[:RERANK_TOP], trechos[RERANK_TOP:])
     if not (RERANK_LOCAL or RERANK_URL) or len(topo) < 2:
         return trechos
     if RERANK_LOCAL:
+        modelo = reranker_local()
+        if not modelo:
+            return trechos
         try:
-            modelo = reranker_local()
             with _trava_reranker:  # uma inferência por vez na GPU
                 notas = modelo.predict([(pergunta, f"{t['palestra_titulo']}\n{t['texto']}") for t in topo])
             return [t for _, t in sorted(zip(notas, topo), key=lambda x: -x[0])] + resto
@@ -404,7 +413,7 @@ async def ask_stream(q: Pergunta):
 
 @app.get("/health")
 def health():
-    return {"ok": app.state.wv.is_ready(), "modelo": LLM_MODEL, "reranker": RERANK_LOCAL or (RERANK_MODEL if RERANK_URL else None)}
+    return {"ok": app.state.wv.is_ready(), "modelo": LLM_MODEL, "reranker": (RERANK_LOCAL if _reranker is not False else None) or (RERANK_MODEL if RERANK_URL else None)}
 
 
 # página, componente e catálogo; montado por último para não engolir /ask e /health

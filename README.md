@@ -50,7 +50,7 @@ Design decisions:
   `alinhamento: estimado`; the page shows "horário estimado"). If a room has two lives on the
   same day with no known start, their chunks get no talk assigned.
 - **Optional reranking** of the 32 candidates with `bge-reranker-v2-m3` on the GPU (~0.25 s): `uv sync --extra
-  rerank` and `RERANK_LOCAL=BAAI/bge-reranker-v2-m3` in `.env`.
+  rerank` (always with `--extra rerank`, or a plain `uv sync` removes it) and `RERANK_LOCAL=BAAI/bge-reranker-v2-m3` in `.env`.
 - **Answer** with local `gemma4:12b-it-qat`, temperature 0.2, grounded only on the chunks, citing `[n]`
   (chosen by benchmark against qwen3:14b, qwen3.5 and ministral-3: `docs/benchmark-modelos.md`).
 
@@ -231,7 +231,7 @@ Decisiones:
   un espacio tiene dos lives el mismo día sin inicio conocido, sus fragmentos quedan sin charla
   asignada.
 - **Reordenamiento opcional** de los 32 candidatos con `bge-reranker-v2-m3` en la GPU (~0,25 s): `uv sync
-  --extra rerank` y `RERANK_LOCAL=BAAI/bge-reranker-v2-m3` en el `.env`.
+  --extra rerank` (siempre con `--extra rerank`, o un `uv sync` simple lo quita) y `RERANK_LOCAL=BAAI/bge-reranker-v2-m3` en el `.env`.
 - **Respuesta** con `gemma4:12b-it-qat` local (elegido por benchmark frente a qwen3:14b, qwen3.5 y
   ministral-3: `docs/benchmark-modelos.md`), temperatura 0,2, basada solo en los fragmentos, citando
   `[n]`.
@@ -413,7 +413,7 @@ Decisões:
   `alinhamento: estimado`, e a página mostra "horário estimado"). Se o espaço tem duas lives no
   mesmo dia sem início conhecido, os trechos ficam sem palestra atribuída.
 - **Reordenação opcional** dos 32 candidatos com `bge-reranker-v2-m3` na GPU (~0,25 s): `uv sync --extra
-  rerank` e `RERANK_LOCAL=BAAI/bge-reranker-v2-m3` no `.env`.
+  rerank` (sempre com `--extra rerank`, senão um `uv sync` simples o remove) e `RERANK_LOCAL=BAAI/bge-reranker-v2-m3` no `.env`.
 - **Resposta** com `gemma4:12b-it-qat` local, temperatura 0,2, só com base nos trechos, citando `[n]`
   (escolhido por benchmark contra qwen3:14b, qwen3.5 e ministral-3: `docs/benchmark-modelos.md`).
 

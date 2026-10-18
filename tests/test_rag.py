@@ -193,6 +193,7 @@ def test_resumo_da_palestra():
 
 def test_reordenar(monkeypatch):
     trechos = [{"palestra_titulo": f"t{i}", "texto": "x"} for i in range(4)]
+    monkeypatch.setattr(api, "RERANK_LOCAL", "")  # o .env da estação liga o local; aqui testa o serviço
     monkeypatch.setattr(api, "RERANK_URL", "http://reranker")
     monkeypatch.setattr(api, "RERANK_TOP", 3)
 
