@@ -28,5 +28,8 @@
  {"pergunta": "Que palestras falaram de IA na educação e quais exemplos deram?", "idioma": "pt", "tipo": "varios_trechos"},
  {"pergunta": "Which talks covered cybersecurity and what were their main points?", "idioma": "en", "tipo": "varios_trechos"},
  {"pergunta": "¿Qué charlas hablaron de robótica y con qué tecnologías?", "idioma": "es", "tipo": "varios_trechos"},
- {"pergunta": "Quais desafios de dados abertos e governança foram discutidos?", "idioma": "pt", "tipo": "varios_trechos"}
+ {"pergunta": "Quais desafios de dados abertos e governança foram discutidos?", "idioma": "pt", "tipo": "varios_trechos"},
+ {"pergunta": "Quem falou sobre Nova Porteirinha?", "idioma": "pt", "tipo": "fora_da_grade"},
+ {"pergunta": "Who talked about Nova Porteirinha?", "idioma": "en", "tipo": "fora_da_grade"},
+ {"pergunta": "¿Quién habló de Nova Porteirinha?", "idioma": "es", "tipo": "fora_da_grade"}
 ]

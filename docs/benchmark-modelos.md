@@ -61,25 +61,37 @@ Fontes: ollama.com/library (listagem e tags de qwen3.5, gemma4, granite4.2, mini
 
 ## 6. Resultado (2026-10-18, medido)
 
-Protocolo: `09_benchmark_llm.py` (`make benchmark MODELOS="..."`), 30 perguntas de `tests/perguntas_bench.json`
-(10 do gabarito, 5 com nome próprio, 5 sem resposta, 5 de idioma cruzado, 5 com vários trechos), contexto
-congelado (mesmos 8 trechos e prompt da API), 1 aquecimento + 3 rodadas, temperature 0,2, num_ctx 16384,
-think=false. Qualidade: juiz Claude Sonnet cego (respostas A-D embaralhadas por pergunta), 1ª rodada,
-notas 0-2 em fidelidade, citações e utilidade (soma 0-6).
+Protocolo: `09_benchmark_llm.py` (`make benchmark MODELOS="..."`), 33 perguntas de `tests/perguntas_bench.json`
+(10 do gabarito, 5 com nome próprio, 5 sem resposta, 5 de idioma cruzado, 5 com vários trechos, 3 com trecho
+fora da grade), mesmos 8 trechos por pergunta (busca congelada) e prompt atual da API, 1 aquecimento + 3
+rodadas, temperature 0,2, num_ctx 16384, think=false; cada modelo é descarregado ao fim. VRAM = GPU inteira
+(inclui bge-m3 ~1,2 GB). "Instante" = nas perguntas fora da grade, a resposta traz o horário do vídeo do trecho
+sem palestrante (requisito do Thalis, também em `make testar`).
 
-| modelo | 1º token p50 | total p50 | total p95 | tokens/s | VRAM pico | idioma | [n] válidos | qualidade (0-6) | sem resposta | cruzado |
-|---|---|---|---|---|---|---|---|---|---|---|
-| qwen3:14b (atual) | 2,9 s | 7,1 s | 22,0 s | 42 | 13,4 GB | 100% | 100% | 5,03 | 5,6 | 4,2 |
-| qwen3.5:9b | 0,7 s | 4,5 s | 12,5 s | 68 | 8,3 GB | 100% | 100% | 5,33 | 5,0 | 4,4 |
-| gemma4:12b-it-qat | 2,2 s | 7,5 s | 13,6 s | 48 | 9,7 GB | 100% | 100% | 5,90 | 6,0 | 5,8 |
-| ministral-3:8b | 1,7 s | 7,9 s | 13,8 s | 68 | 9,5 GB | 100% | 100% | 4,03 | 5,4 | 3,2 |
+| modelo | 1º token p50 | total p50 | total p95 | tokens/s | VRAM pico | idioma | [n] válidos | instante |
+|---|---|---|---|---|---|---|---|---|
+| qwen3:14b (atual) | 3,0 s | 6,7 s | 21,6 s | 42 | 13,4 GB | 100% | 100% | 100% |
+| qwen3.5:9b | 0,7 s | 4,1 s | 12,5 s | 68 | 8,3 GB | 100% | 100% | 44% |
+| gemma4:12b-it-qat | 2,3 s | 6,7 s | 13,4 s | 48 | 9,7 GB | 100% | 100% | 100% |
+| ministral-3:8b (1ª rodada) | 1,7 s | 7,9 s | 13,8 s | 68 | 9,5 GB | 100% | — | — |
 
-Caso dirigido (trecho fora da grade, "Quem falou sobre Nova Porteirinha?" em pt/en/es, 3× cada): o modelo
-deve dar o instante do vídeo que está no cabeçalho do trecho. Acertos: qwen3:14b 9/9, gemma4 7/9,
-qwen3.5:9b 4/9 (omite ou inventa o horário).
+Qualidade (juiz Claude Sonnet cego, respostas A-D embaralhadas, 1ª rodada das 30 perguntas originais, ainda com
+o prompt anterior ao ajuste do instante; notas 0-2 em fidelidade, citações e utilidade, soma 0-6):
 
-Decisão pela regra (qualidade igual ou melhor e tempo total ≥30% menor): **nenhum candidato passa; fica o
-qwen3:14b**. O qwen3.5:9b é 37% mais rápido e tem nota geral maior, mas falha no caso dirigido e recusa pior
-quando não há resposta. O gemma4 tem a melhor qualidade em todos os tipos e usa 3,7 GB a menos de VRAM
-(liberaria a GPU para o reranker), sem ganho de tempo no p50 (p95 bem melhor): candidato se a prioridade for
-qualidade. Removidos do disco: qwen3.5:9b e ministral-3:8b. Limites: 30 perguntas, 1 juiz, 1 rodada julgada.
+| modelo | geral | gabarito | nome próprio | sem resposta | cruzado | vários trechos |
+|---|---|---|---|---|---|---|
+| qwen3:14b | 5,03 | 5,4 | 4,6 | 5,6 | 4,2 | 5,0 |
+| qwen3.5:9b | 5,33 | 5,7 | 5,8 | 5,0 | 4,4 | 5,4 |
+| gemma4:12b-it-qat | 5,90 | 5,9 | 5,8 | 6,0 | 5,8 | 6,0 |
+| ministral-3:8b | 4,03 | 4,0 | 3,2 | 5,4 | 3,2 | 4,4 |
+
+Decisão: **fica o qwen3:14b**.
+- Pela regra numérica do protocolo (§5) e pela do briefing (qualidade igual ou melhor e total ≥30% menor), o
+  qwen3.5:9b venceria (nota 5,33, 4,1 s). Ele foi vetado por um critério adicional, decidido depois de medir:
+  reprova o requisito do instante fora da grade (44%; `test_trecho_fora_da_grade` falha). A decisão é discricionária
+  nesse ponto e está registrada como tal.
+- O gemma4 tem a maior nota geral e em 4 de 5 tipos (empata em nome próprio), p95 bem menor (13,4 s × 21,6 s) e
+  3,7 GB a menos de VRAM, mas não reduz o p50; não cumpre a regra de troca. É o candidato se a prioridade for
+  qualidade e cauda de latência, ou para liberar a GPU para o reranker.
+- Limites: 30-33 perguntas, 1 juiz, só a 1ª rodada julgada, diferenças de 0,3-0,6 em escala 0-6 sem intervalo
+  de confiança. Removidos do disco: qwen3.5:9b e ministral-3:8b; gemma4 mantido até a decisão.
