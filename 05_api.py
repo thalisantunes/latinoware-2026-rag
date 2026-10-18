@@ -148,9 +148,9 @@ def selecionar(trecho, pergunta, vetor, k):
         t = o.properties
         titulo = re.sub(r"\W", "", t["palestra_titulo"].lower())
         chave = (titulo, t["palestrantes"]) if t["fonte"] == "resumo" else t["texto"]
-        # palestra_id repete entre salas e atividades: a palestra é título + horário;
-        # bio e trecho fora da grade não pertencem a uma palestra e não entram no limite
-        palestra = (titulo, t["inicio"]) if t["fonte"] != "bio" and t["palestra_id"] else chave
+        # o limite vale para transcrições de uma palestra (título + horário, pois palestra_id
+        # repete entre salas); resumo, bio e trecho fora da grade passam sempre
+        palestra = (titulo, t["inicio"]) if t["fonte"] == "transcricao" and t["palestra_id"] else chave
         if chave not in vistos and por_palestra.get(palestra, 0) < MAX_POR_PALESTRA:
             vistos.add(chave)
             por_palestra[palestra] = por_palestra.get(palestra, 0) + 1
