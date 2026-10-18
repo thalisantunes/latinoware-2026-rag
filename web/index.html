@@ -104,6 +104,9 @@
   .chip.video { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
   .chip.video b { color: inherit; }
   .sem { font-size: .85rem; color: var(--muted); }
+  .partilha { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+  .partilha button { border: 1px solid var(--line-ui); background: var(--surface); color: var(--fg); font: 600 .9rem/1 var(--sans);
+    padding: 10px 16px; border-radius: 999px; cursor: pointer; min-height: 44px; }
   .ir { display: inline-block; margin-top: 16px; font-size: .95rem; }
   section.bloco { margin-top: 48px; scroll-margin-top: 16px; }
   section.bloco > h2 { font-size: 1.3rem; letter-spacing: 0; text-transform: none; color: var(--fg); margin: 0 0 16px; font-weight: 700; }
@@ -177,6 +180,9 @@
       rede: "Sem conexão com o servidor de busca.", demora: "O servidor demorou demais para responder.", tentar: "Tentar de novo",
       tipo: { resumo: "Resumo", bio: "Palestrante", transcricao: "Vídeo" },
       assistir: "Assistir no YouTube", semGravacao: "Sem gravação",
+      semPalestra: (e, d) => `Trecho sem palestra identificada · ${e}, ${d}`,
+      copiar: "Copiar resposta", compartilhar: "Compartilhar", copiado: "Resposta copiada.", linkCopiado: "Link copiado.",
+      naoCopiou: "Não foi possível copiar.", pergunta: "Pergunta",
       hcat: "Programação completa", ir: "Ver a programação completa ↓", hsobre: "Sobre",
       sobre: ["Este projeto nasceu de uma conversa com ", "Duda Nogueira", " (", "Weaviate",
         ") na fila de embarque do voo de volta da Latinoware: o evento tem cauda longa e não acaba quando acaba. Obrigado a ele e à Weaviate."],
@@ -199,6 +205,9 @@
       rede: "Could not reach the search server.", demora: "The server took too long to answer.", tentar: "Try again",
       tipo: { resumo: "Abstract", bio: "Speaker", transcricao: "Video" },
       assistir: "Watch on YouTube", semGravacao: "No recording",
+      semPalestra: (e, d) => `Excerpt with no identified talk · ${e}, ${d}`,
+      copiar: "Copy answer", compartilhar: "Share", copiado: "Answer copied.", linkCopiado: "Link copied.",
+      naoCopiou: "Could not copy.", pergunta: "Question",
       hcat: "Full schedule", ir: "See the full schedule ↓", hsobre: "About",
       sobre: ["This project was born from a conversation with ", "Duda Nogueira", " (", "Weaviate",
         ") in the boarding line of the flight back from Latinoware: the event has a long tail and does not end when it ends. Thanks to him and to Weaviate."],
@@ -221,6 +230,9 @@
       rede: "No se pudo conectar con el servidor de búsqueda.", demora: "El servidor tardó demasiado en responder.", tentar: "Intentar de nuevo",
       tipo: { resumo: "Resumen", bio: "Ponente", transcricao: "Video" },
       assistir: "Ver en YouTube", semGravacao: "Sin grabación",
+      semPalestra: (e, d) => `Fragmento sin charla identificada · ${e}, ${d}`,
+      copiar: "Copiar respuesta", compartilhar: "Compartir", copiado: "Respuesta copiada.", linkCopiado: "Enlace copiado.",
+      naoCopiou: "No se pudo copiar.", pergunta: "Pregunta",
       hcat: "Programación completa", ir: "Ver la programación completa ↓", hsobre: "Acerca de",
       sobre: ["Este proyecto nació de una conversación con ", "Duda Nogueira", " (", "Weaviate",
         ") en la fila de embarque del vuelo de regreso de Latinoware: el evento tiene una cola larga y no termina cuando termina. Gracias a él y a Weaviate."],
@@ -299,7 +311,9 @@
       meta.append(span);
     }
     if (f0.espaco) meta.append(el("span", { textContent: f0.espaco }));
-    const nome = f0.fonte === "bio" ? f0.palestrantes : limpo(f0.titulo) || f0.palestrantes;
+    const nome = f0.fonte === "bio" ? f0.palestrantes
+      : f0.fonte === "transcricao" && !f0.palestra_id ? t.semPalestra(f0.espaco, `${(f0.inicio || "").slice(8, 10)}/${(f0.inicio || "").slice(5, 7)}`)
+      : limpo(f0.titulo) || f0.palestrantes;
     const chips = el("div", { className: "chips" });
     for (const f of grupo) {
       const video = f.fonte === "transcricao" && seguro(f.url_video) && Number.isInteger(f.video_t);
@@ -352,6 +366,25 @@
     } finally {
       leitor.cancel().catch(() => {});  // break/erro no meio: fecha a conexão e libera a GPU no servidor
     }
+  }
+
+  // resposta e fontes em texto puro, para colar em qualquer lugar
+  function textoPuro(pergunta, d, fontes, t) {
+    const linhas = fontes.map((f) => `[${f.n}] ${f.fonte === "transcricao" && !f.palestra_id ? f.espaco : limpo(f.titulo)}`
+      + `${f.palestrantes && f.fonte !== "bio" ? ` (${f.palestrantes})` : ""} ${f.url_video || f.url}`);
+    return `${t.pergunta}: ${pergunta}\n\n${d.resposta}\n\n${t.fontes}:\n${linhas.join("\n")}`;
+  }
+
+  function partilha(pergunta, d, fontes, t) {
+    const avisar = (msg) => { $("anuncio").textContent = ""; setTimeout(() => { $("anuncio").textContent = msg; }, 50); };
+    const copiar = (texto, ok) => navigator.clipboard.writeText(texto).then(() => avisar(ok), () => avisar(t.naoCopiou));
+    const link = `${location.origin}${location.pathname}?pergunta=${encodeURIComponent(pergunta)}`;
+    return el("div", { className: "partilha" },
+      el("button", { type: "button", textContent: t.copiar, onclick: () => copiar(textoPuro(pergunta, d, fontes, t), t.copiado) }),
+      el("button", { type: "button", textContent: t.compartilhar, onclick: () => {
+        if (navigator.share) navigator.share({ title: document.title, text: pergunta, url: link }).catch(() => {});
+        else copiar(link, t.linkCopiado);
+      } }));
   }
 
   function listaFontes(fontes, t) {
@@ -414,7 +447,7 @@
       await catalogo;
       const tl = tem(d.idioma) ? T[d.idioma] : t;
       mostrar(tl.pronto, el("div", { lang: tl.html },
-        comCitacoes(d.resposta, new Set(fontes.map((f) => f.n)), tl), ...listaFontes(fontes, tl)));
+        comCitacoes(d.resposta, new Set(fontes.map((f) => f.n)), tl), partilha(pergunta, d, fontes, tl), ...listaFontes(fontes, tl)));
       $("saida").focus();
     } catch (err) {
       const msg = err.name === "TimeoutError" ? t.demora : !status ? t.rede : status === 429 ? t.ocupado
