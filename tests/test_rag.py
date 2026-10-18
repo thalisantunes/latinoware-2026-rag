@@ -272,3 +272,25 @@ def test_video_indisponivel_nao_vira_link():
     videos = [{"id": "bloqueado", "espaco": "Espaço Iguaçu", "data": "2026-10-16", "duracao": 4 * 3600,
                "inicio_live": 1792152000, "audio": False, "indisponivel": True}]
     assert indexar.alinhar_palestras(palestras, videos, {}, inicios=False) == {}
+
+
+def test_resumo_de_metricas():
+    eventos = [{"idioma": "pt", "status": 200, "cache": False, "sem_resposta": False, "resumo": False, "ms": 4000},
+               {"idioma": "pt", "status": 200, "cache": True, "sem_resposta": False, "resumo": False, "ms": 100},
+               {"idioma": "en", "status": 429, "cache": False, "sem_resposta": False, "resumo": False, "ms": 5},
+               {"idioma": "es", "status": 200, "cache": False, "sem_resposta": True, "resumo": True, "ms": 100},
+               {"idioma": "pt", "status": 200, "cache": False, "sem_resposta": False, "resumo": False, "ms": 8000}]
+    r = api.resumo(eventos)
+    assert r["perguntas"] == 5 and r["idiomas"] == {"pt": 3, "en": 1, "es": 1}
+    assert (r["reaproveitadas"], r["sem_resposta"], r["ocupado_429"], r["resumos"], r["erros"]) == (1, 1, 1, 1, 0)
+    # tempo só de quem gerou: cache e "sem resposta" ficam fora (senão o p50 seria 0,1 s); percentil nearest-rank
+    assert (r["p50_s"], r["p95_s"]) == (4.0, 8.0)
+
+
+@pytest.mark.skipif(not api_no_ar(), reason="API fora do ar")
+def test_stats_conta_pergunta_sem_guardar_texto():
+    antes = httpx.get(f"{API_URL}/stats", params={"dias": 2}).json()["total"]["perguntas"]  # 2: virada do dia
+    httpx.post(f"{API_URL}/ask", json={"pergunta": PERGUNTAS["en"]}, timeout=300)
+    depois = httpx.get(f"{API_URL}/stats", params={"dias": 2}).json()
+    assert depois["total"]["perguntas"] >= antes + 1  # outro tráfego pode somar
+    assert PERGUNTAS["en"] not in json.dumps(depois)

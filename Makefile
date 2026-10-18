@@ -4,7 +4,7 @@ export
 
 PY = uv run python
 
-.PHONY: tudo weaviate coletar audio transcrever sincronizar indexar catalogo api testar avaliar benchmark fotos fotos-limpar videos-individuais novos-videos
+.PHONY: tudo weaviate coletar audio transcrever sincronizar indexar catalogo api testar avaliar benchmark fotos fotos-limpar videos-individuais novos-videos metricas
 tudo: weaviate coletar audio transcrever sincronizar indexar catalogo
 
 weaviate:
@@ -64,3 +64,8 @@ videos-individuais:
 novos-videos:
 	$(PY) 02_baixar_audio.py $(foreach v,$(VIDEOS),"$(v)")
 	$(MAKE) transcrever sincronizar indexar catalogo
+
+# linha semanal de uso (anônima) no STATUS.md
+metricas:
+	$(PY) 12_metricas.py >> STATUS.md
+	tail -1 STATUS.md

@@ -11,9 +11,12 @@ externo compatível com a API OpenAI (LLM_BASE_URL + LLM_MODEL).
 import asyncio
 import json
 import logging
+import math
 import os
 import re
 import threading
+import time
+from collections import Counter
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -23,7 +26,7 @@ import uvicorn
 import weaviate
 from weaviate.classes.config import Configure, DataType, Property, Tokenization
 from weaviate.classes.query import Filter, MetadataQuery, Sort
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -51,6 +54,10 @@ _reranker, _trava_reranker = None, threading.Lock()  # _reranker = False: a carg
 CACHE_DIST = float(os.environ.get("CACHE_DIST", 0.05))
 RETENCAO_DIAS = int(os.environ.get("RETENCAO_DIAS", 90))
 SEM_PALESTRA = "-"  # pergunta geral (não é "Resumo com IA" de uma palestra)
+# métricas de uso: uma linha por pergunta em data/metricas/AAAA-MM-DD.jsonl, sem texto da pergunta nem IP
+METRICAS = Path(__file__).parent / "data" / "metricas"
+BRT = timezone(timedelta(hours=-3))  # o dia das métricas é o de Brasília, não o UTC
+_trava_metricas = threading.Lock()
 ARQ_VERSAO = Path(__file__).parent / "data" / "versao_indice.txt"
 
 
@@ -326,12 +333,22 @@ async def ja_respondida(q):
 
 @app.post("/ask")
 async def ask(q: Pergunta):
-    if guardada := await ja_respondida(q):
-        return guardada
-    if GERACOES.locked():
-        raise HTTPException(429, "muitas perguntas ao mesmo tempo; tente de novo em instantes")
-    async with GERACOES:
-        return await responder(q)
+    inicio, status, cache, vazio = time.monotonic(), 500, False, False
+    try:
+        if guardada := await ja_respondida(q):
+            status, cache, vazio = 200, True, not guardada["fontes"]
+            return guardada
+        if GERACOES.locked():
+            raise HTTPException(429, "muitas perguntas ao mesmo tempo; tente de novo em instantes")
+        async with GERACOES:
+            r = await responder(q)
+        status, cache, vazio = 200, r.get("reaproveitada", False), not r["fontes"]
+        return r
+    except HTTPException as e:
+        status = e.status_code
+        raise
+    finally:
+        registrar("ask", q, inicio, status, cache, vazio)
 
 
 def preparar_historico(wv):
@@ -348,8 +365,48 @@ def preparar_historico(wv):
         Property(name="criado_em", data_type=DataType.DATE), Property(name="reutilizacoes", data_type=DataType.INT)])
 
 
+def registrar(rota, q, inicio, status, cache=False, sem_resposta=False):
+    """Métrica anônima de uma pergunta: rota, idioma, status, cache, sem resposta, resumo e duração."""
+    ev = {"ts": datetime.now(BRT).isoformat(timespec="seconds"), "rota": rota,
+          "idioma": q.idioma or detectar_idioma(q.pergunta), "status": status, "cache": cache,
+          "sem_resposta": sem_resposta, "resumo": bool(q.palestra_id), "ms": round((time.monotonic() - inicio) * 1000)}
+    try:
+        with _trava_metricas:
+            METRICAS.mkdir(parents=True, exist_ok=True)
+            with open(METRICAS / f"{ev['ts'][:10]}.jsonl", "a") as arq:
+                arq.write(json.dumps(ev) + "\n")
+    except Exception:
+        log.exception("falha ao registrar métrica")
+
+
+def ler_metricas(dia):
+    """Eventos de um dia; linha corrompida (queda no meio da escrita) é ignorada."""
+    arq, eventos = METRICAS / f"{dia}.jsonl", []
+    for linha in arq.read_text().splitlines() if arq.exists() else []:
+        try:
+            eventos.append(json.loads(linha))
+        except ValueError:
+            continue
+    return eventos
+
+
+def resumo(eventos):
+    # tempo de quem gerou: sem cache e com fontes (sem fontes o stream nem chama o LLM)
+    ok = sorted(e["ms"] for e in eventos if e["status"] == 200 and not e["cache"] and not e["sem_resposta"])
+    pct = lambda p: round(ok[min(len(ok) - 1, math.ceil(p * len(ok)) - 1)] / 1000, 1) if ok else None  # noqa: E731
+    return {"perguntas": len(eventos), "idiomas": dict(Counter(e["idioma"] for e in eventos)),
+            "reaproveitadas": sum(e["cache"] for e in eventos), "resumos": sum(e["resumo"] for e in eventos),
+            "sem_resposta": sum(e["sem_resposta"] for e in eventos),
+            "ocupado_429": sum(e["status"] == 429 for e in eventos),
+            "desistencias": sum(e["status"] == 499 for e in eventos),  # fechou a página no meio
+            "erros": sum(e["status"] >= 500 for e in eventos), "p50_s": pct(0.5), "p95_s": pct(0.95)}
+
+
 def expurgar():
-    limite = datetime.now(timezone.utc) - timedelta(days=RETENCAO_DIAS)
+    limite = datetime.now(BRT) - timedelta(days=RETENCAO_DIAS)
+    for arq in METRICAS.glob("*.jsonl") if METRICAS.exists() else []:
+        if arq.stem < limite.date().isoformat():
+            arq.unlink()
     r = app.state.wv.collections.get("Pergunta").data.delete_many(where=Filter.by_property("criado_em").less_than(limite))
     if r.successful:
         log.info(f"histórico: {r.successful} perguntas com mais de {RETENCAO_DIAS} dias apagadas")
@@ -495,22 +552,30 @@ def sse(evento, dados):
 
 @app.post("/ask/stream")
 async def ask_stream(q: Pergunta):
+    inicio = time.monotonic()
     if guardada := await ja_respondida(q):
+        registrar("stream", q, inicio, 200, cache=True, sem_resposta=not guardada["fontes"])
         async def reaproveitar():
             yield sse("etapa", {"etapa": "reaproveitando"})
             yield sse("fontes", {"fontes": guardada["fontes"], "idioma": guardada["idioma"]})
             yield sse("fim", guardada)
         return StreamingResponse(reaproveitar(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
     if GERACOES.locked():
+        registrar("stream", q, inicio, 429)
         raise HTTPException(429, "muitas perguntas ao mesmo tempo; tente de novo em instantes")
     # o corpo do stream só roda depois do handler: a vaga é tomada aqui, senão o 429 nunca dispara
     await GERACOES.acquire()
     vaga = [True]  # liberar() roda no fim do corpo e no background: só a primeira vez solta
+    # 499 = o cliente saiu antes do fim (inclusive antes de o corpo começar); vira 200 no fim, 500 em falha
+    m = {"status": 499, "cache": False, "sem_resposta": False, "registrado": False}
 
     def liberar():
         if vaga:
             vaga.pop()
             GERACOES.release()
+        if not m["registrado"]:  # também quando o cliente cai antes de o corpo começar
+            m["registrado"] = True
+            registrar("stream", q, inicio, m["status"], m["cache"], m["sem_resposta"])
 
     async def eventos():
         try:
@@ -520,6 +585,7 @@ async def ask_stream(q: Pergunta):
                     if tipo == "etapa":
                         yield sse("etapa", {"etapa": valor})
                     elif tipo == "cache":  # pergunta igual já respondida: sem GPU
+                        m.update(status=200, cache=True, sem_resposta=not valor["fontes"])
                         yield sse("etapa", {"etapa": "reaproveitando"})
                         yield sse("fontes", {"fontes": valor["fontes"], "idioma": valor["idioma"]})
                         yield sse("fim", valor)
@@ -527,10 +593,12 @@ async def ask_stream(q: Pergunta):
                     else:
                         idioma, prompt, fontes, vetor = valor
             except HTTPException as e:
+                m["status"] = e.status_code
                 yield sse("erro", {"status": e.status_code, "detalhe": e.detail})
                 return
             yield sse("fontes", {"fontes": fontes, "idioma": idioma})
             if not fontes:  # nada achado: não ocupa a GPU
+                m.update(status=200, sem_resposta=True)
                 yield sse("fim", {"resposta": "", "idioma": idioma})
                 return
             yield sse("etapa", {"etapa": "escrevendo", "modelo": LLM_MODEL})
@@ -542,11 +610,16 @@ async def ask_stream(q: Pergunta):
                         yield sse("token", {"t": p})
             except Exception:
                 log.exception("falha no LLM")
+                m["status"] = 503
                 yield sse("erro", {"status": 503, "detalhe": "gerador de respostas indisponível"})
                 return
+            m["status"] = 200
             texto = limpar("".join(resposta))
             await lembrar(q, idioma, vetor, texto, fontes)
             yield sse("fim", {"resposta": texto, "idioma": idioma, "reaproveitada": False})
+        except Exception:
+            m["status"] = 500
+            raise
         finally:
             liberar()
 
@@ -554,6 +627,20 @@ async def ask_stream(q: Pergunta):
     # background libera a vaga se o corpo nunca chegar a ser iterado
     return StreamingResponse(eventos(), media_type="text/event-stream", background=BackgroundTask(liberar),
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.get("/stats")
+def stats(dias: int = Query(7, ge=1, le=90)):
+    """Uso por dia (de Brasília) nos últimos `dias`: perguntas, idiomas, reaproveitadas, sem resposta, 429,
+    desistências, erros, p50/p95."""
+    hoje = datetime.now(BRT).date()
+    por_dia, todos = [], []
+    for i in range(dias - 1, -1, -1):
+        dia = (hoje - timedelta(days=i)).isoformat()
+        eventos = ler_metricas(dia)
+        todos += eventos
+        por_dia.append({"dia": dia} | resumo(eventos))
+    return {"dias": por_dia, "total": resumo(todos)}
 
 
 @app.get("/frequentes")
