@@ -4,7 +4,7 @@ export
 
 PY = uv run python
 
-.PHONY: tudo weaviate coletar audio transcrever sincronizar indexar catalogo api testar avaliar benchmark fotos fotos-limpar videos-individuais novos-videos metricas gabarito-candidatos instalar-timer
+.PHONY: tudo weaviate coletar audio transcrever sincronizar indexar catalogo api testar avaliar benchmark fotos fotos-limpar videos-individuais novos-videos metricas gabarito-candidatos instalar-timer publicar-site
 # catalogo antes de indexar: não depende do índice e fica pronto mesmo se a avaliação da busca falhar
 tudo: weaviate coletar audio transcrever sincronizar catalogo indexar
 
@@ -88,3 +88,11 @@ instalar-timer:
 	systemctl --user enable --now latinoware-rag-metricas.timer
 	systemctl --user list-timers latinoware-rag-metricas.timer --no-pager
 	@loginctl show-user $$USER -p Linger | grep -q yes || echo "aviso: sem linger o timer só roda com sessão aberta (loginctl enable-linger $$USER)"
+
+# copia a página para o site institucional (SITE_RAG no .env); o commit e a publicação são feitos lá
+ARQUIVOS_SITE = web/index.html web/latinoware-catalogo.js web/catalogo.json web/fotos.json
+publicar-site:
+	@test -n "$(SITE_RAG)" || { echo "defina SITE_RAG no .env (pasta da página no repo do site)"; exit 1; }
+	@test -d "$(SITE_RAG)" || { echo "$(SITE_RAG) não existe"; exit 1; }
+	cp $(ARQUIVOS_SITE) "$(SITE_RAG)/"
+	@cd "$(SITE_RAG)" && git status --short -- . || true
