@@ -49,7 +49,8 @@ Design decisions:
   `release_timestamp`, or the start of the room's first activity that day (marked
   `alinhamento: estimado`; the page shows "horário estimado"). If a room has two lives on the
   same day with no known start, their chunks get no talk assigned.
-- **Answer** with local `qwen3:14b`, temperature 0.2, grounded only on the chunks, citing `[n]`.
+- **Answer** with local `qwen3:14b`, temperature 0.2, grounded only on the chunks, citing `[n]`
+  (chosen by benchmark against qwen3.5, gemma4 and ministral-3: `docs/benchmark-modelos.md`).
 
 ### Requirements
 
@@ -227,7 +228,8 @@ Decisiones:
   espacio en el día (marcado `alinhamento: estimado`; la página muestra "horário estimado"). Si
   un espacio tiene dos lives el mismo día sin inicio conocido, sus fragmentos quedan sin charla
   asignada.
-- **Respuesta** con `qwen3:14b` local, temperatura 0,2, basada solo en los fragmentos, citando
+- **Respuesta** con `qwen3:14b` local (elegido por benchmark frente a qwen3.5, gemma4 y ministral-3:
+  `docs/benchmark-modelos.md`), temperatura 0,2, basada solo en los fragmentos, citando
   `[n]`.
 
 ### Requisitos
@@ -406,7 +408,8 @@ Decisões:
   `release_timestamp` do YouTube, ou o início da primeira atividade do espaço no dia (marcado
   `alinhamento: estimado`, e a página mostra "horário estimado"). Se o espaço tem duas lives no
   mesmo dia sem início conhecido, os trechos ficam sem palestra atribuída.
-- **Resposta** com `qwen3:14b` local, temperatura 0,2, só com base nos trechos, citando `[n]`.
+- **Resposta** com `qwen3:14b` local, temperatura 0,2, só com base nos trechos, citando `[n]`
+  (escolhido por benchmark contra qwen3.5, gemma4 e ministral-3: `docs/benchmark-modelos.md`).
 
 ### Requisitos
 
