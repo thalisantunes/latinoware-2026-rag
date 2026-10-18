@@ -1,9 +1,6 @@
-// <latinoware-catalogo src="catalogo.json" lang="pt" api="https://rag.ilove.the.br" perguntar>
-// Catálogo de palestras da Latinoware com filtros e link para o instante na live.
-// Atributos: src (obrigatório), lang (pt|en|es), api (opcional: liga a pergunta à IA),
-// fotos (opcional: URL de fotos.json, galeria "Fotos no evento" na visão de cada palestrante),
-// perguntar (opcional: mostra "Resumo com IA" e só emite o evento "perguntar" para a página).
-// Sem dependências e sem build. Projeto pessoal e não oficial: github.com/thalisantunes/latinoware-2026-rag
+// <latinoware-catalogo src lang api fotos perguntar>: catálogo de palestras da Latinoware com filtros e link
+// para o instante na live. Atributos e uso: embed/README.md. Sem dependências nem build. Projeto pessoal e
+// não oficial: github.com/thalisantunes/latinoware-2026-rag
 (() => {
   const VERSAO = 1; // igual à "versao" de catalogo.json
   const P = "lw_"; // prefixo dos filtros na URL, para não colidir com a página que hospeda
@@ -19,7 +16,7 @@
       pergunta: (t, p) => `Resuma a palestra "${t}"${p ? ` de ${p}` : ""}`,
       perguntaRotulo: "Pergunte sobre as palestras", enviar: "Perguntar", aguarde: "Buscando e escrevendo a resposta…",
       ocupado: "Muitas perguntas agora. Tente de novo em instantes.", demorou: "A resposta demorou demais. Tente de novo.",
-      erro: "Não foi possível responder agora.", fontes: "Fontes", video: "Vídeo",
+      erro: "Não foi possível responder agora.", fora: "A IA está fora do ar agora; a programação continua disponível.", fontes: "Fontes", video: "Vídeo",
       copiar: "Copiar resposta", compartilhar: "Compartilhar", paginaSite: "Página no site da Latinoware", fotosEvento: "Fotos no evento", foto: "Foto",
       fotoDe: n => `${n} na Latinoware`, noFlickr: "Foto no Flickr", remover: "Quer remover uma foto? Escreva para",
       copiado: "Resposta copiada.", linkCopiado: "Link copiado.", naoCopiou: "Não foi possível copiar.",
@@ -34,7 +31,7 @@
       pergunta: (t, p) => `Summarize the talk "${t}"${p ? ` by ${p}` : ""}`,
       perguntaRotulo: "Ask about the talks", enviar: "Ask", aguarde: "Searching and writing the answer…",
       ocupado: "Too many questions right now. Try again shortly.", demorou: "The answer took too long. Try again.",
-      erro: "Could not answer right now.", fontes: "Sources", video: "Video",
+      erro: "Could not answer right now.", fora: "The AI is offline right now; the schedule is still available.", fontes: "Sources", video: "Video",
       copiar: "Copy answer", compartilhar: "Share", paginaSite: "Page on the Latinoware website", fotosEvento: "Photos at the event", foto: "Photo",
       fotoDe: n => `${n} at Latinoware`, noFlickr: "Photo on Flickr", remover: "Want a photo removed? Write to",
       copiado: "Answer copied.", linkCopiado: "Link copied.", naoCopiou: "Could not copy.",
@@ -49,7 +46,7 @@
       pergunta: (t, p) => `Resume la charla "${t}"${p ? ` de ${p}` : ""}`,
       perguntaRotulo: "Pregunta sobre las charlas", enviar: "Preguntar", aguarde: "Buscando y escribiendo la respuesta…",
       ocupado: "Demasiadas preguntas ahora. Inténtalo de nuevo en breve.", demorou: "La respuesta tardó demasiado. Inténtalo de nuevo.",
-      erro: "No se pudo responder ahora.", fontes: "Fuentes", video: "Video",
+      erro: "No se pudo responder ahora.", fora: "La IA está fuera de línea ahora; la programación sigue disponible.", fontes: "Fuentes", video: "Video",
       copiar: "Copiar respuesta", compartilhar: "Compartir", paginaSite: "Página en el sitio de Latinoware", fotosEvento: "Fotos en el evento", foto: "Foto",
       fotoDe: n => `${n} en Latinoware`, noFlickr: "Foto en Flickr", remover: "¿Quieres quitar una foto? Escribe a",
       copiado: "Respuesta copiada.", linkCopiado: "Enlace copiado.", naoCopiou: "No se pudo copiar.",
@@ -57,7 +54,7 @@
   };
 
   const CSS = `
-    /* container-type zera a largura intrínseca: width 100% evita colapsar dentro de flex/grid do site */
+    /* container-type zera a largura intrínseca */
     :host { display: block; width: 100%; font: inherit; color: inherit; container-type: inline-size;
       --a: var(--lw-accent, var(--accent, light-dark(#17694a, #5cc595)));
       --af: var(--lw-accent-fg, var(--accent-fg, light-dark(#fff, #0d1f16)));
@@ -108,12 +105,12 @@
     .galeria { list-style: none; padding: 0; display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
     .galeria img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; display: block; }
     .galeria small { color: var(--m); font-size: .75rem; }
-    /* contêiner largo (a largura do site que hospeda, não a da janela): filtros numa linha, cards em grade */
+    /* contêiner largo (largura do site, não da janela) */
     @container (min-width: 1000px) {
       .filtros { grid-template-columns: 2fr repeat(4, 1fr); }
       .busca { grid-column: auto; }
       ul.lista { grid-template-columns: repeat(2, 1fr); }
-      ul.lista > li { display: flex; } /* cards da mesma linha com a mesma altura */
+      ul.lista > li { display: flex; }
       ul.lista article { flex: 1; }
       .pessoa:has(.rosto) { grid-template-columns: 180px 1fr; align-items: start; }
       .pessoa .rosto { width: 180px; height: 180px; grid-row: span 4; }
@@ -287,7 +284,13 @@
         };
         raiz.addEventListener("click", this.cliques);
       }
-      if (api) {
+      if (api) { // API fora: avisa e esconde os botões de IA; o catálogo segue
+        fetch(`${api.replace(/\/$/, "")}/health`, { signal: AbortSignal.timeout(10000) }).then(r => r.json())
+          .then(d => { if (!d.ok) throw new Error(); }).catch(() => {
+            const out = raiz.querySelector(".ia .out");
+            if (!this.ocupado && !out.firstChild) out.innerHTML = `<p class="msg" role="status">${esc(this.t.fora)}</p>`;
+            raiz.querySelectorAll(".perg").forEach(b => { b.hidden = true; });
+          });
         const f = raiz.querySelector(".ia");
         f.addEventListener("submit", e => { e.preventDefault(); this.enviar(); });
         f.q.value = (q.get(P + "pergunta") || "").slice(0, 1000);
@@ -407,7 +410,9 @@
       const pedir = rota => fetch(`${this.getAttribute("api").replace(/\/$/, "")}${rota}`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pergunta, idioma: this.idioma, ...(palestra_id && { palestra_id }) }),
-        signal: AbortSignal.timeout(90000) });
+        signal: AbortSignal.timeout(90000) }).catch(e => { // só falha de rede vira "IA fora do ar"
+          throw e.name === "TimeoutError" ? e : new Error("fora");
+        });
       try {
         let r = await pedir("/ask/stream"), d;
         if (r.status === 404 || r.status === 405) r = await pedir("/ask"); // API sem streaming
@@ -434,12 +439,14 @@
         }
         if (!d) throw new Error("erro");
         out.querySelector(".msg").remove();
+        this.shadowRoot.querySelectorAll(".perg").forEach(b => { b.hidden = false; }); // a API voltou
         resp.lang = d.idioma || "";
         resp.textContent = d.resposta;
         this.partilha(out, pergunta, d.resposta, `${t.fontes}:\n${dadosFontes.map(s =>
           `[${s.n}] ${s.titulo}${s.palestrantes ? ` (${s.palestrantes})` : ""} ${s.url_video || s.url}`).join("\n")}`);
       } catch (e) {
-        const msg = e.name === "TimeoutError" ? t.demorou : e.message === "ocupado" ? t.ocupado : t.erro;
+        // sem resposta do servidor (TypeError do fetch): a API está fora, não é erro da pergunta
+        const msg = e.name === "TimeoutError" ? t.demorou : e.message === "fora" ? t.fora : e.message === "ocupado" ? t.ocupado : t.erro;
         out.innerHTML = `<p class="msg" role="alert">${esc(msg)}</p>`;
       } finally {
         this.ocupado = false;
