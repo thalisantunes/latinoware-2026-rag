@@ -8,12 +8,18 @@ import importlib.util
 import os
 from pathlib import Path
 
-spec = importlib.util.spec_from_file_location("indexar", Path(__file__).parent / "04_indexar.py")
-indexar = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(indexar)
+
+def modulo(nome):
+    spec = importlib.util.spec_from_file_location(nome.removesuffix(".py"), Path(__file__).parent / nome)
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+indexar = modulo("04_indexar.py")
+api = modulo("05_api.py")  # mesma seleção de trechos da API (dedupe e limite por palestra)
 
 K = int(os.environ.get("K", 8))
-ALPHA = float(os.environ.get("HYBRID_ALPHA", 0.75))
 GABARITO = [
     ("Quem falou sobre rodar IA localmente sem pagar por token, usando CPU e GPU juntas?", "IA sustentável sem gastos"),
     ("Was there a talk about storing time series data in Postgres?", "TimescaleDB"),
@@ -34,12 +40,11 @@ def main():
         trecho = cli.collections.get("Trecho")
         for pergunta, esperado in GABARITO:
             vetor = indexar.embed([pergunta])[0]
-            res = trecho.query.hybrid(query=pergunta, vector=vetor, alpha=ALPHA, limit=K)
-            titulos = [o.properties["palestra_titulo"] for o in res.objects]
+            titulos = [t["palestra_titulo"] for t in api.selecionar(trecho, pergunta, vetor, K)]
             pos = next((i for i, t in enumerate(titulos, 1) if esperado.lower() in t.lower()), None)
             acertos += pos is not None
             print(f"{'OK ' if pos else 'ERR'} pos={pos} | {pergunta}")
-    print(f"recall@{K} (alpha={ALPHA}): {acertos}/{len(GABARITO)}")
+    print(f"recall@{K} (alpha={api.ALPHA}): {acertos}/{len(GABARITO)}")
 
 
 if __name__ == "__main__":

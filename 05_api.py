@@ -29,8 +29,10 @@ LLM_MODEL = os.environ.get("LLM_MODEL", "qwen3:14b")
 LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "https://api.openai.com/v1")
 LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
 ALPHA = float(os.environ.get("HYBRID_ALPHA", 0.75))  # 0 = só BM25, 1 = só vetor
-CORS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "https://ilove.the.br,https://www.ilove.the.br,https://rede-cidades.pages.dev,http://localhost:8765").split(",")]
+CORS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "https://ilove.the.br,https://www.ilove.the.br,https://rede-cidades.pages.dev,https://latinoware.org,https://www.latinoware.org,http://localhost:8765").split(",")]
 MAX_TOKENS = int(os.environ.get("LLM_MAX_TOKENS", 800))
+# sem limite, uma palestra longa e bem transcrita ocupava 7 das 8 fontes
+MAX_POR_PALESTRA = int(os.environ.get("MAX_POR_PALESTRA", 2))
 # a GPU atende poucas gerações por vez; acima disso a API responde 429 em vez de enfileirar
 GERACOES = asyncio.Semaphore(int(os.environ.get("MAX_CONCORRENCIA", 2)))
 log = logging.getLogger("uvicorn.error")
@@ -127,17 +129,30 @@ def links(valor):
         return []
 
 
+def video(url):
+    """(video_id, segundos) de https://youtu.be/<id>?t=<s>; (None, None) sem vídeo."""
+    m = re.fullmatch(r"https://youtu\.be/([\w-]+)\?t=(\d+)", url or "")
+    return (m[1], int(m[2])) if m else (None, None)
+
+
 def buscar(pergunta, vetor, k):
-    res = app.state.wv.collections.get("Trecho").query.hybrid(
-        query=pergunta, vector=vetor, alpha=ALPHA, limit=k * 3)
+    return selecionar(app.state.wv.collections.get("Trecho"), pergunta, vetor, k)
+
+
+def selecionar(trecho, pergunta, vetor, k):
+    """Busca híbrida e corte em k; também usada por 06_avaliar_busca.py."""
+    res = trecho.query.hybrid(query=pergunta, vector=vetor, alpha=ALPHA, limit=k * 4)
     # keynotes são transmitidas em vários espaços: o mesmo resumo aparece repetido na grade
-    vistos, unicos = set(), []
+    vistos, unicos, por_palestra = set(), [], {}
     for o in res.objects:
         t = o.properties
-        chave = (re.sub(r"\W", "", t["palestra_titulo"].lower()), t["palestrantes"]) \
-            if t["fonte"] == "resumo" else t["texto"]
-        if chave not in vistos:
+        titulo = re.sub(r"\W", "", t["palestra_titulo"].lower())
+        chave = (titulo, t["palestrantes"]) if t["fonte"] == "resumo" else t["texto"]
+        # palestra_id repete entre salas e atividades: a palestra é título + horário
+        palestra = (titulo, t["inicio"])
+        if chave not in vistos and por_palestra.get(palestra, 0) < MAX_POR_PALESTRA:
             vistos.add(chave)
+            por_palestra[palestra] = por_palestra.get(palestra, 0) + 1
             unicos.append(t)
     return unicos[:k]
 
@@ -169,7 +184,10 @@ async def responder(q):
     # transcrições servem de contexto, mas não são devolvidas: só título, autor e link com tempo
     fontes = [{"n": i, "titulo": t["palestra_titulo"], "palestrantes": t["palestrantes"],
                "links_palestrantes": links(t.get("links_palestrantes")),
-               "fonte": t["fonte"], "url": t["url"], "alinhamento": t["alinhamento"],
+               "fonte": t["fonte"], "espaco": t["espaco"], "inicio": t["inicio"], "url": t["url"],
+               "url_video": t.get("url_video") or None, "video_id": video(t.get("url_video"))[0],
+               "video_t": video(t.get("url_video"))[1], "alinhamento": t["alinhamento"],
+               "palestra_id": t["palestra_id"] or None,
                "inicio_video_s": t["inicio_video_s"] if t["video_id"] else None}
               for i, t in enumerate(trechos, 1)]
     return {"resposta": resposta, "idioma": idioma, "fontes": fontes}

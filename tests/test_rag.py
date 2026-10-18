@@ -2,6 +2,8 @@
 
 import importlib.util
 import os
+import re
+from collections import Counter
 from pathlib import Path
 
 import httpx
@@ -40,6 +42,12 @@ def test_detectar_idioma(idioma, pergunta):
 ])
 def test_idioma_com_nome_proprio(idioma, pergunta):
     assert api.detectar_idioma(pergunta) == idioma
+
+
+def test_video():
+    assert api.video("https://youtu.be/q-_OQ5ww5iw?t=4078") == ("q-_OQ5ww5iw", 4078)
+    assert api.video("") == (None, None)
+    assert api.video(None) == (None, None)
 
 
 def test_chave_espaco():
@@ -91,6 +99,11 @@ def test_ask_tres_linguas(idioma, pergunta):
         assert isinstance(f["links_palestrantes"], list)
         assert all(p["url"].startswith("https://") for p in f["links_palestrantes"])
         assert (f["inicio_video_s"] is None) == (f["fonte"] != "transcricao")
+        assert f["url_video"] is None or f["url_video"].startswith("https://youtu.be/")
+        assert (f["url_video"] is None) == (f["video_id"] is None) == (f["video_t"] is None)
+    # nenhuma palestra ocupa mais de 2 fontes
+    contagem = Counter((re.sub(r"\W", "", f["titulo"].lower()), f["inicio"]) for f in d["fontes"])
+    assert max(contagem.values()) <= 2
 
 
 @pytest.mark.skipif(not api_no_ar(), reason="API fora do ar")
