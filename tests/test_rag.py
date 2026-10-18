@@ -264,3 +264,11 @@ def test_expurgo_de_perguntas_antigas():
             assert col.query.fetch_object_by_id(nova) is not None
         finally:
             col.data.delete_by_id(nova)
+
+
+def test_video_indisponivel_nao_vira_link():
+    palestras = [{"id": "p", "espaco": "Espaço Iguaçu", "inicio": "2026-10-16T10:00:00-03:00",
+                  "fim": "2026-10-16T10:50:00-03:00"}]
+    videos = [{"id": "bloqueado", "espaco": "Espaço Iguaçu", "data": "2026-10-16", "duracao": 4 * 3600,
+               "inicio_live": 1792152000, "audio": False, "indisponivel": True}]
+    assert indexar.alinhar_palestras(palestras, videos, {}, inicios=False) == {}

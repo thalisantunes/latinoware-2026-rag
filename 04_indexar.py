@@ -84,7 +84,7 @@ def live_do_espaco(v, palestras, videos, manual):
     """Palestras do espaço e dia da live, e o instante em que a live começou."""
     do_dia = [p for p in palestras if p["inicio"].startswith(v["data"])
               and chave_espaco(p["espaco"]) == chave_espaco(v["espaco"])]
-    lives_no_dia = sum(1 for x in videos if x["data"] == v["data"]
+    lives_no_dia = sum(1 for x in videos if x["data"] == v["data"] and not x.get("indisponivel")
                        and chave_espaco(x["espaco"]) == chave_espaco(v["espaco"]))
     return do_dia, *inicio_da_live(v, do_dia, manual, lives_no_dia)
 
@@ -99,6 +99,8 @@ def alinhar_palestras(palestras, videos, manual, inicios=True):
     """
     alinhadas = {}
     for v in videos:
+        if v.get("indisponivel"):  # listado mas indisponível no YouTube (bloqueado, privado): não vira link
+            continue
         do_dia, t0, fonte = live_do_espaco(v, palestras, videos, manual)
         if not t0 or not v.get("duracao"):
             continue
