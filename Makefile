@@ -51,7 +51,7 @@ benchmark:
 	$(PY) 09_benchmark_llm.py $(MODELOS)
 
 testar:
-	uv run --with pytest pytest -q tests/
+	uv run --with pytest --with playwright==1.63.0 pytest -q tests/  # playwright: test_ouvir.py (pulado sem o Chromium dele)
 
 # fotos dos palestrantes (ver 10_fotos.py): make fotos PASTA=<originais do PTI> ALBUM=<url do álbum no Flickr>
 FOTOS = uv run --extra fotos --extra rerank python 10_fotos.py

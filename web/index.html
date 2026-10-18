@@ -115,6 +115,13 @@
   .partilha { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
   .partilha button { border: 1px solid var(--line-ui); background: var(--surface); color: var(--fg); font: 600 .9rem/1 var(--sans);
     padding: 10px 16px; border-radius: 999px; cursor: pointer; min-height: 44px; }
+  /* "Ouvir resposta": botões do leitor do componente, no mesmo fluxo dos de copiar e compartilhar */
+  .ouvir:not([hidden]), .ouvir > span:not([hidden]) { display: contents; }
+  .partilha label { display: inline-flex; align-items: center; gap: 6px; font-size: .9rem; color: var(--muted); }
+  .partilha select { font: inherit; color: var(--fg); background: var(--surface); border: 1px solid var(--line-ui);
+    border-radius: 999px; padding: 8px 12px; min-height: 44px; }
+  @media (prefers-reduced-motion: no-preference) { .ouvir [aria-pressed="true"] > span { animation: pulsa-som 1.2s ease-in-out infinite; } }
+  @keyframes pulsa-som { 50% { opacity: .3; } }
   .reaproveitada { color: var(--muted); font-size: .9rem; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
   .reaproveitada button { border: 1px solid var(--line-ui); background: var(--surface); color: var(--fg); font: 600 .85rem/1 var(--sans);
     padding: 8px 14px; border-radius: 999px; cursor: pointer; min-height: 44px; }
@@ -427,13 +434,15 @@
     return `${t.pergunta}: ${pergunta}\n\n${d.resposta}\n\n${t.fontes}:\n${linhas.join("\n")}`;
   }
 
-  function partilha(pergunta, d, fontes, t) {
+  function partilha(pergunta, d, fontes, t, palestraId) {
     const avisar = (msg) => { $("anuncio").textContent = ""; setTimeout(() => { $("anuncio").textContent = msg; }, 50); };
     // fora de https não existe navigator.clipboard: o erro vira aviso, não exceção solta
     const copiar = (texto, ok) => Promise.resolve().then(() => navigator.clipboard.writeText(texto))
       .then(() => avisar(ok), () => avisar(t.naoCopiou));
     const link = `${location.origin}${location.pathname}?pergunta=${encodeURIComponent(pergunta)}`;
-    return el("div", { className: "partilha" },
+    // "Ouvir resposta" (ou "Ouvir resumo" no "Resumo com IA") pelo leitor do componente; sem voz no navegador, sem botão
+    const voz = customElements.get("latinoware-catalogo")?.leitor?.(d.resposta, tem(d.idioma) ? d.idioma : lingua(), !!palestraId);
+    return el("div", { className: "partilha" }, ...(voz ? [voz] : []),
       el("button", { type: "button", textContent: t.copiar, onclick: () => copiar(textoPuro(pergunta, d, fontes, t), t.copiado) }),
       el("button", { type: "button", textContent: t.compartilhar, onclick: () => {
         if (navigator.share) navigator.share({ title: document.title, text: pergunta, url: link })
@@ -463,6 +472,7 @@
     if (pergunta.length < 3) { $("q").focus(); return; }
     const t = ui();
     ocupado = true;
+    customElements.get("latinoware-catalogo")?.calar?.();  // a leitura da resposta anterior para
     $("b").setAttribute("aria-disabled", "true"); $("b").textContent = t.enviando;
     history.replaceState(null, "", location.pathname + location.search);  // tira o #fonte-n da resposta anterior
     const nomes = servidor.reranker ? ["buscando", "reordenando", "escrevendo"] : ["buscando", "escrevendo"];
@@ -520,7 +530,7 @@
         ...(d.reaproveitada ? [el("p", { className: "reaproveitada" },
           tl.reaproveitada(new Date(d.criado_em).toLocaleDateString(tl.html)),
           el("button", { type: "button", textContent: tl.gerarNovo, onclick: () => perguntar(pergunta, palestraId, true) }))] : []),
-        partilha(pergunta, d, fontes, tl), ...listaFontes(fontes, tl)));
+        partilha(pergunta, d, fontes, tl, palestraId), ...listaFontes(fontes, tl)));
       $("saida").focus();
     } catch (err) {
       if (status === 404) { mostrar(t.vazio, el("div", { className: "estado vazio", textContent: t.vazio })); return; }  // palestra sem trechos

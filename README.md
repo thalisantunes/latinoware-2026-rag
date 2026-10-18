@@ -202,6 +202,10 @@ is responsible for how the sources are used, including YouTube's terms.
 file; served from `localhost`, it uses its own origin. The API listens on `0.0.0.0:8765` and
 accepts CORS from the origins in `CORS_ORIGINS`.
 
+"Listen" reads the answer aloud ("Listen to summary" for an AI summary) with the browser's own voice
+(Web Speech API, no external service): no `[n]` markers, in the answer language, pause/resume/stop and
+speed 0.8–1.5. It never autoplays; without speech synthesis in the browser, there is no button.
+
 ### License
 
 Code under [MIT](LICENSE). Talk content belongs to the speakers and the Latinoware organizers.
@@ -408,6 +412,10 @@ responde por el uso de las fuentes, incluidos los términos de YouTube.
 inicio del archivo; servido desde `localhost`, usa su propio origen. La API escucha en
 `0.0.0.0:8765` y acepta CORS de los orígenes en `CORS_ORIGINS`.
 
+"Escuchar" lee la respuesta en voz alta ("Escuchar resumen" en el resumen con IA) con la voz del propio
+navegador (Web Speech API, sin servicio externo): sin las marcas `[n]`, en el idioma de la respuesta,
+pausar/continuar/detener y velocidad 0,8–1,5. Nunca empieza solo; sin síntesis de voz en el navegador, no hay botón.
+
 ### Licencia
 
 Código bajo [MIT](LICENSE). El contenido de las charlas pertenece a los ponentes y a la
@@ -611,6 +619,10 @@ responde pelo uso das fontes, incluindo os termos do YouTube.
 `web/index.html` é estático, sem build. A URL da API fica na constante `API_URL` no topo do
 arquivo; servido em `localhost`, ele usa a própria origem. A API escuta em `0.0.0.0:8765` e
 aceita CORS das origens em `CORS_ORIGINS`.
+
+"Ouvir resposta" lê a resposta em voz alta ("Ouvir resumo" no Resumo com IA) com a voz do próprio
+navegador (Web Speech API, sem serviço externo): sem as marcações `[n]`, na língua da resposta,
+pausar/continuar/parar e velocidade 0,8–1,5. Nunca começa sozinho; sem síntese de voz no navegador, não há botão.
 
 ### Licença
 
