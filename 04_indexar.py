@@ -70,6 +70,10 @@ def inicio_da_live(video, palestras_do_dia, manual, lives_no_dia):
     return None, None
 
 
+def links(palestrantes):
+    return json.dumps([{"nome": s["nome"], "url": s["url"]} for s in palestrantes], ensure_ascii=False)
+
+
 def janelas(segmentos):
     """Agrupa segmentos em pedaços de ~PALAVRAS palavras com SOBREPOSICAO palavras repetidas."""
     pedaco, n, novos = [], 0, 0
@@ -122,6 +126,7 @@ def trechos_de_transcricao(palestras, videos, manual):
                     "palestra_id": pid or "",
                     "palestra_titulo": p["titulo"] if p else f"{v['espaco']} {v['data']} (fora da grade)",
                     "palestrantes": ", ".join(x["nome"] for x in p["palestrantes"]) if p else "",
+                    "links_palestrantes": links(p["palestrantes"]) if p else "[]",
                     "idioma_original": IDIOMA.get(p.get("idioma"), "") if p else "",
                     "espaco": v["espaco"],
                     "inicio": p["inicio"] if p else v["data"],
@@ -152,7 +157,8 @@ def main():
             "texto": f"{p['titulo']}\nPalestrantes: {nomes}\nTrilha: {p['trilha']} | {p['espaco']} | "
                      f"{quando} | Idioma: {p.get('idioma', '')}\n{p['resumo']}",
             "fonte": "resumo", "palestra_id": p["id"], "palestra_titulo": p["titulo"],
-            "palestrantes": nomes, "idioma_original": IDIOMA.get(p.get("idioma"), ""),
+            "palestrantes": nomes, "links_palestrantes": links(p["palestrantes"]),
+            "idioma_original": IDIOMA.get(p.get("idioma"), ""),
             "espaco": p["espaco"], "inicio": p["inicio"], "video_id": "", "inicio_video_s": 0,
             "url": p["url"], "alinhamento": "",
         })
@@ -163,7 +169,8 @@ def main():
             "texto": f"{s['nome']}{org}. País: {s['pais']}\n{s['bio']}\nPalestras na Latinoware 2026: "
                      + "; ".join(titulos),
             "fonte": "bio", "palestra_id": "", "palestra_titulo": "; ".join(titulos),
-            "palestrantes": s["nome"], "idioma_original": "", "espaco": "", "inicio": "",
+            "palestrantes": s["nome"], "links_palestrantes": links([s]), "idioma_original": "",
+            "espaco": "", "inicio": "",
             "video_id": "", "inicio_video_s": 0, "url": s["url"], "alinhamento": "",
         })
     transcritos, relatorio = trechos_de_transcricao(palestras, videos, manual)
@@ -190,7 +197,7 @@ def main():
                                                    "pais", "url", "palestras")])
         col_t = cli.collections.create("Trecho", vector_config=Configure.Vectors.self_provided(),
                                        properties=[texto(n) for n in ("texto", "fonte", "palestra_id",
-                                                   "palestra_titulo", "palestrantes", "idioma_original",
+                                                   "palestra_titulo", "palestrantes", "links_palestrantes", "idioma_original",
                                                    "espaco", "inicio", "video_id", "url", "alinhamento")]
                                        + [Property(name="inicio_video_s", data_type=DataType.INT)])
         with col_p.batch.fixed_size(200) as b:
