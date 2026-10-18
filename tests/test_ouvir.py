@@ -1,10 +1,9 @@
 """Botão "Ouvir" (voz do navegador) na página e no componente, num Chromium sem rede com speechSynthesis simulado.
 
 Precisa do Playwright e do Chromium dele (make testar já traz o pacote; o navegador: uv run --with playwright==1.63.0
-playwright install chromium); sem eles, os testes são pulados.
+playwright install chromium); sem o navegador instalado, os testes são pulados.
 """
 
-import json
 from pathlib import Path
 
 import pytest
@@ -14,21 +13,26 @@ sync_api = pytest.importorskip("playwright.sync_api")
 WEB = Path(__file__).parent.parent / "web"
 ORIGEM = "http://rag.teste"
 RESPOSTA = "O maddog falou sobre Home Assistant [1]. Também citou automação residencial [1, 2]! Fim."
+FRASES = ["O maddog falou sobre Home Assistant.", "Também citou automação residencial!", "Fim."]
 FONTES = [{"n": 1, "fonte": "resumo", "titulo": "Home Assistant", "url": "https://latinoware.org/a", "inicio": "2026-10-14T10:00"},
           {"n": 2, "fonte": "resumo", "titulo": "Automação", "url": "https://latinoware.org/b", "inicio": "2026-10-14T11:00"}]
 
-# voz falsa: guarda cada fala; o teste decide quando ela termina (window.__fim())
+# voz falsa: guarda cada fala; o teste decide quando ela termina (window.__fim()) ou falha (window.__erro(tipo)).
+# cancel() termina a fala atual como o Chrome (onerror "interrupted") ou, com CANCELA=onend, como Safari e Firefox.
 VOZ_FALSA = """
 window.__falas = []; window.__chamadas = [];
 let atual = null;
 class Fala { constructor(t) { this.text = t; } }
 const ss = {
+  paused: false,
   getVoices: () => [],
-  speak(u) { atual = u; __falas.push({ text: u.text, lang: u.lang, rate: u.rate }); },
-  cancel() { __chamadas.push("cancel"); const u = atual; atual = null; if (u) setTimeout(() => u.onerror?.({ error: "interrupted" })); },
-  pause() { __chamadas.push("pause"); }, resume() { __chamadas.push("resume"); },
+  speak(u) { atual = u; __falas.push({ text: u.text, lang: u.lang, rate: u.rate }); setTimeout(() => u.onstart?.()); },
+  cancel() { __chamadas.push("cancel"); const u = atual; atual = null;
+    if (u) setTimeout(() => "CANCELA" === "onend" ? u.onend?.() : u.onerror?.({ error: "interrupted" })); },
+  pause() { __chamadas.push("pause"); this.paused = true; }, resume() { __chamadas.push("resume"); this.paused = false; },
 };
 window.__fim = () => { const u = atual; atual = null; u?.onend?.(); };
+window.__erro = (tipo) => { const u = atual; atual = null; u?.onerror?.({ error: tipo }); };
 Object.defineProperty(window, "speechSynthesis", { value: ss, configurable: true });
 Object.defineProperty(window, "SpeechSynthesisUtterance", { value: Fala, configurable: true });
 """
@@ -42,15 +46,14 @@ EMBED = f"""<!doctype html><html lang="pt-BR"><meta charset="utf-8"><body>
 @pytest.fixture(scope="module")
 def navegador():
     with sync_api.sync_playwright() as p:
-        try:
-            b = p.chromium.launch()
-        except Exception as e:
-            pytest.skip(f"Chromium do Playwright indisponível: {e}")
+        if not Path(p.chromium.executable_path).exists():
+            pytest.skip("Chromium do Playwright não instalado")
+        b = p.chromium.launch()  # instalado e não abre: é falha, não pulo
         yield b
         b.close()
 
 
-def abrir(navegador, caminho="/", idioma="pt", voz=VOZ_FALSA, embed_attr=""):
+def abrir(navegador, caminho="/", idioma="pt", voz=VOZ_FALSA, embed_attr="", resposta=RESPOSTA):
     pagina = navegador.new_page()
     pagina.add_init_script(voz)
 
@@ -65,18 +68,20 @@ def abrir(navegador, caminho="/", idioma="pt", voz=VOZ_FALSA, embed_attr=""):
         if nome == "/ask/stream":
             return rota.fulfill(status=404, body="")
         if nome == "/ask":
-            return rota.fulfill(json={"resposta": RESPOSTA, "idioma": idioma, "fontes": FONTES})
+            return rota.fulfill(json={"resposta": resposta, "idioma": idioma, "fontes": FONTES})
         arquivo = WEB / (nome.strip("/") or "index.html")
-        tipo = {".html": "text/html", ".js": "text/javascript", ".json": "application/json"}[arquivo.suffix]
-        return rota.fulfill(body=arquivo.read_bytes(), content_type=tipo)
+        if not arquivo.is_file():
+            return rota.fulfill(status=404, body="")
+        tipo = {".html": "text/html", ".js": "text/javascript", ".json": "application/json"}.get(arquivo.suffix)
+        return rota.fulfill(body=arquivo.read_bytes(), content_type=tipo or "application/octet-stream")
 
     pagina.route(f"{ORIGEM}/**", servir)
     pagina.goto(ORIGEM + caminho)
     return pagina
 
 
-def perguntar(pagina):
-    pagina.fill("#q", "O que o maddog apresentou?")
+def perguntar(pagina, pergunta="O que o maddog apresentou?"):
+    pagina.fill("#q", pergunta)
     pagina.click("#b")
     pagina.wait_for_selector(".partilha")
 
@@ -85,39 +90,97 @@ def falas(pagina):
     return pagina.evaluate("window.__falas")
 
 
-def test_ouvir_resposta_na_pagina(navegador):
-    pagina = abrir(navegador)
+def chamadas(pagina, nome):
+    return pagina.evaluate("window.__chamadas").count(nome)
+
+
+def controles_escondidos(pagina):
+    assert pagina.locator(".ouvir > span").count() == 1
+    return pagina.locator(".ouvir > span").evaluate("s => s.hidden")
+
+
+def foco_aria_pressed(pagina):
+    return pagina.evaluate("document.activeElement.getAttribute('aria-pressed')")
+
+
+@pytest.mark.parametrize("cancela", ["onerror", "onend"])  # cancel() à moda do Chrome e à moda de Safari/Firefox
+def test_ouvir_resposta_na_pagina(navegador, cancela):
+    pagina = abrir(navegador, voz=VOZ_FALSA.replace("CANCELA", cancela))
     perguntar(pagina)
     ouvir = pagina.get_by_role("button", name="Ouvir resposta")
     assert ouvir.get_attribute("aria-pressed") == "false"
     assert falas(pagina) == []  # nada de autoplay
-    assert not pagina.get_by_role("button", name="Parar").is_visible()
+    assert controles_escondidos(pagina)
 
     ouvir.click()
     assert ouvir.get_attribute("aria-pressed") == "true"
-    f = falas(pagina)
-    assert f == [{"text": "O maddog falou sobre Home Assistant.", "lang": "pt-BR", "rate": 1}]  # sem [n]
+    assert not controles_escondidos(pagina)
+    assert falas(pagina) == [{"text": FRASES[0], "lang": "pt-BR", "rate": 1}]  # sem [n]
 
     pagina.get_by_role("button", name="Pausar").click()
-    assert pagina.evaluate("window.__chamadas").count("pause") == 1
+    assert chamadas(pagina, "pause") == 1
+    resumes = chamadas(pagina, "resume")
+    pagina.get_by_label("Velocidade").select_option("1.5")  # pausado: não volta a falar sozinho
+    assert len(falas(pagina)) == 1
     pagina.get_by_role("button", name="Continuar").click()
-    assert pagina.evaluate("window.__chamadas").count("resume") >= 2
+    assert chamadas(pagina, "resume") == resumes + 1
 
-    pagina.get_by_label("Velocidade").select_option("1.5")  # recomeça a frase atual na velocidade nova
-    assert falas(pagina)[-1] == {"text": "O maddog falou sobre Home Assistant.", "lang": "pt-BR", "rate": 1.5}
+    pagina.get_by_label("Velocidade").select_option("1.25")  # recomeça a frase atual na velocidade nova
+    pagina.wait_for_timeout(50)  # a fala cancelada termina depois e não pode avançar a fila
+    assert falas(pagina)[1:] == [{"text": FRASES[0], "lang": "pt-BR", "rate": 1.25}]
 
-    pagina.evaluate("window.__fim()")
-    assert falas(pagina)[-1]["text"] == "Também citou automação residencial!"
-    pagina.evaluate("window.__fim()")
-    assert falas(pagina)[-1]["text"] == "Fim."
-    pagina.evaluate("window.__fim()")  # acabou: volta ao estado inicial
+    pagina.get_by_role("button", name="Pausar").focus()
+    for frase in FRASES[1:]:
+        pagina.evaluate("window.__fim()")
+        assert falas(pagina)[-1]["text"] == frase
+    pagina.evaluate("window.__fim()")  # acabou: volta ao estado inicial, com o foco no Ouvir
     assert ouvir.get_attribute("aria-pressed") == "false"
-    assert not pagina.get_by_role("button", name="Parar").is_visible()
+    assert controles_escondidos(pagina)
+    assert foco_aria_pressed(pagina) == "false"
 
     ouvir.click()
     pagina.get_by_role("button", name="Parar").click()
     assert ouvir.get_attribute("aria-pressed") == "false"
-    assert pagina.evaluate("document.activeElement.getAttribute('aria-pressed')") == "false"  # foco volta ao Ouvir
+    assert foco_aria_pressed(pagina) == "false"
+    pagina.wait_for_timeout(50)
+    assert falas(pagina)[-1]["text"] == FRASES[0] and len(falas(pagina)) == 5  # parar não puxa a próxima frase
+    pagina.close()
+
+
+def test_nova_pergunta_cala_a_anterior(navegador):
+    pagina = abrir(navegador)
+    perguntar(pagina)
+    pagina.get_by_role("button", name="Ouvir resposta").click()
+    antes = chamadas(pagina, "cancel")
+    perguntar(pagina, "Outra pergunta?")
+    assert chamadas(pagina, "cancel") > antes
+    assert pagina.get_by_role("button", name="Ouvir resposta").get_attribute("aria-pressed") == "false"
+    pagina.close()
+
+
+def test_erro_de_voz_esconde_o_botao(navegador):
+    pagina = abrir(navegador)
+    perguntar(pagina)
+    ouvir = pagina.get_by_role("button", name="Ouvir resposta")
+    ouvir.click()
+    pagina.evaluate("window.__erro('audio-busy')")  # passageiro: para, mas o botão fica
+    assert ouvir.get_attribute("aria-pressed") == "false" and ouvir.is_visible()
+    ouvir.click()
+    ouvir.focus()
+    pagina.evaluate("window.__erro('voice-unavailable')")
+    assert pagina.locator(".ouvir").evaluate("c => c.hidden")
+    assert pagina.evaluate("document.activeElement.textContent") == "Copiar resposta"  # o foco não cai no body
+    pagina.close()
+
+
+def test_token_longo_nao_perde_texto(navegador):
+    longo = "https://exemplo.org/" + "a" * 330
+    pagina = abrir(navegador, resposta=f"Veja {longo} agora [1].")
+    perguntar(pagina)
+    pagina.get_by_role("button", name="Ouvir resposta").click()
+    for _ in range(3):
+        pagina.evaluate("window.__fim()")
+    assert " ".join(f["text"] for f in falas(pagina)).replace(longo[:200] + " ", longo[:200]) == f"Veja {longo} agora."
     pagina.close()
 
 
@@ -126,9 +189,8 @@ def test_ouvir_resumo_em_ingles(navegador):
     pagina.evaluate("""document.dispatchEvent(new CustomEvent("perguntar", { cancelable: true,
         detail: { pergunta: "Summarize the talk", palestra_id: "x" } }))""")
     pagina.wait_for_selector(".partilha")
-    ouvir = pagina.get_by_role("button", name="Listen to summary")
-    ouvir.click()
-    assert falas(pagina)[0]["lang"] == "en"
+    pagina.get_by_role("button", name="Listen to summary").click()
+    assert falas(pagina)[0] == {"text": FRASES[0], "lang": "en", "rate": 1}
     pagina.close()
 
 
@@ -149,12 +211,13 @@ def test_componente(navegador, attr, botoes):
     assert pagina.get_by_role("button", name="Ouvir resposta").count() == botoes
     if botoes:
         pagina.get_by_role("button", name="Ouvir resposta").click()
-        assert falas(pagina)[0]["text"] == "O maddog falou sobre Home Assistant."
+        assert falas(pagina) == [{"text": FRASES[0], "lang": "pt-BR", "rate": 1}]
     pagina.close()
 
 
 def test_resumo_com_ia_no_componente(navegador):
-    pagina = abrir(navegador, "/embed.html")
+    pagina = abrir(navegador, "/embed.html", idioma="es")
     pagina.locator("latinoware-catalogo .perg").first.click()
-    pagina.get_by_role("button", name="Ouvir resumo").wait_for()
+    pagina.get_by_role("button", name="Escuchar resumen").click()
+    assert falas(pagina) == [{"text": FRASES[0], "lang": "es", "rate": 1}]
     pagina.close()

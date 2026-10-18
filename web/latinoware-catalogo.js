@@ -144,12 +144,14 @@
   const VOZ = !!globalThis.speechSynthesis && typeof globalThis.SpeechSynthesisUtterance === "function";
   const LANG = { pt: "pt-BR", en: "en", es: "es" };
   let calar = () => {}; // uma leitura por vez na página
-  if (VOZ) addEventListener("pagehide", () => speechSynthesis.cancel());
+  if (VOZ) addEventListener("pagehide", () => calar()); // a volta pelo histórico (bfcache) reencontra a interface parada
 
   function leitor(texto, idioma, resumo) {
-    const l = T[idioma] ? idioma : "pt", t = T[l];
-    const pedacos = String(texto).replace(/\s*\[\d+(?:\s*[,;]\s*\d+)*\]/g, "").split(/(?<=[.!?…])\s+|\n+/)
-      .flatMap(f => f.match(/\S.{0,199}(?=\s|$)/gs) || []);
+    const l = Object.hasOwn(T, idioma) ? idioma : "pt", t = T[l];
+    // sem lookbehind (Safari < 16.4 rejeitaria o arquivo inteiro); token sem espaço maior que 200 vira pedaços de 200
+    const pedacos = String(texto).replace(/\s*\[\d+(?:\s*[,;]\s*\d+)*\]/g, "").split("\n")
+      .flatMap(linha => linha.match(/\S.*?(?:[.!?…](?=\s|$)|$)/g) || [])
+      .flatMap(f => f.match(/\S.{0,199}(?=\s|$)|\S{200}/g) || []);
     if (!VOZ || !pedacos.length) return null;
     const caixa = document.createElement("span");
     caixa.className = "ouvir";
@@ -157,13 +159,20 @@
       <button type="button"></button><button type="button">${esc(t.parar)}</button><label>${esc(t.velocidade)}<select>${
       [0.8, 1, 1.25, 1.5].map(v => `<option value="${v}"${v === 1 ? " selected" : ""}>${v.toLocaleString(l)}×</option>`).join("")}</select></label></span>`;
     const [bOuvir, ctl] = caixa.children, [bPausa, bParar, rotulo] = ctl.children, sel = rotulo.querySelector("select");
-    let i = 0, vez = 0, pausado = false;
+    const focado = el => el.contains(caixa.getRootNode().activeElement);
+    let i = 0, vez = 0, pausado = false, atual = null, espera;
     const estado = lendo => {
+      if (!lendo && focado(ctl)) bOuvir.focus(); // os controles vão sumir: o foco não cai no body
       bOuvir.setAttribute("aria-pressed", lendo);
       ctl.hidden = !lendo;
       bPausa.textContent = pausado ? t.continuar : t.pausar;
     };
-    const parar = () => { vez++; pausado = false; speechSynthesis.cancel(); estado(false); };
+    const parar = () => { vez++; pausado = false; atual = null; clearTimeout(espera); speechSynthesis.cancel(); estado(false); };
+    const semVoz = () => { // o navegador tem a API mas não fala: o botão some
+      parar();
+      if (focado(caixa)) caixa.nextElementSibling?.focus();
+      caixa.hidden = true;
+    };
     const falar = () => {
       const minha = ++vez; // as falas canceladas terminam depois, sem mexer na fila
       speechSynthesis.cancel();
@@ -174,16 +183,19 @@
         if (minha !== vez) return;
         if (j >= pedacos.length || !caixa.isConnected) return parar(); // fim, ou a resposta saiu da página
         i = j;
-        const u = new SpeechSynthesisUtterance(pedacos[j]);
+        if (pausado) return; // plataforma que encerra a fala ao pausar (Chrome no Android): "Continuar" segue daqui
+        const u = atual = new SpeechSynthesisUtterance(pedacos[j]); // referência guardada: sem ela o Chrome perde o onend
         u.lang = LANG[l];
         if (voz) u.voice = voz;
         u.rate = +sel.value;
-        u.onend = () => fala(j + 1);
-        u.onerror = e => { // sem voz utilizável: o botão some
-          if (minha !== vez || e.error === "interrupted" || e.error === "canceled") return;
-          parar();
-          caixa.hidden = true;
+        u.onstart = () => clearTimeout(espera);
+        u.onend = () => { clearTimeout(espera); fala(j + 1); };
+        u.onerror = e => {
+          if (minha !== vez) return;
+          /^(synthesis|language|voice)-unavailable$/.test(e.error) ? semVoz() : parar(); // interrompida por fora: para, sem travar
         };
+        clearTimeout(espera);
+        espera = setTimeout(() => { if (minha === vez && !pausado) semVoz(); }, 8000); // nunca começou: sem voz no sistema
         speechSynthesis.speak(u);
       };
       fala(i);
@@ -198,11 +210,13 @@
     };
     bPausa.onclick = () => {
       pausado = !pausado;
-      pausado ? speechSynthesis.pause() : speechSynthesis.resume();
+      if (pausado) speechSynthesis.pause();
+      else if (speechSynthesis.paused) speechSynthesis.resume();
+      else falar(); // a fala já tinha sido encerrada: recomeça do trecho atual
       estado(true);
     };
     bParar.onclick = () => { parar(); bOuvir.focus(); };
-    sel.onchange = () => { if (!ctl.hidden) { pausado = false; estado(true); falar(); } };
+    sel.onchange = () => { if (!ctl.hidden && !pausado) falar(); }; // pausado: a velocidade vale ao continuar
     return caixa;
   }
 
