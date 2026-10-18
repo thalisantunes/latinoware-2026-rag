@@ -226,19 +226,25 @@ def test_reordenar(monkeypatch):
 @pytest.mark.skipif(not api_no_ar(), reason="API fora do ar")
 def test_cache_de_perguntas():
     import time
-    pergunta = "Quais palestras falaram de energia elétrica?"
+    import uuid
+    marca = uuid.uuid4().hex[:8]  # pergunta única por rodada, apagada no fim: o teste não alimenta a FAQ pública
+    pergunta = f"Quais palestras falaram de energia elétrica? (teste {marca})"
     primeira = httpx.post(f"{API_URL}/ask", json={"pergunta": pergunta, "novo": True}, timeout=300).json()
     assert primeira["reaproveitada"] is False
     inicio = time.time()
     # só muda pontuação e caixa: é a mesma pergunta
-    segunda = httpx.post(f"{API_URL}/ask", json={"pergunta": "quais palestras falaram de energia elétrica"}, timeout=300).json()
+    segunda = httpx.post(f"{API_URL}/ask", json={"pergunta": pergunta.lower().replace("?", "")}, timeout=300).json()
     assert segunda["reaproveitada"] is True and time.time() - inicio < 3
     assert segunda["resposta"] == primeira["resposta"]
     # parecida, mas outra pergunta: não recebe a resposta da primeira (pode reaproveitar a própria, de outra rodada)
     outra = httpx.post(f"{API_URL}/ask", json={"pergunta": "Quais palestras falaram de energia solar?"}, timeout=300).json()
     assert outra["resposta"] != primeira["resposta"]
     frequentes = httpx.get(f"{API_URL}/frequentes", params={"idioma": "pt"}).json()
-    assert isinstance(frequentes, list) and all(f["vezes"] >= 2 for f in frequentes)
+    assert isinstance(frequentes, list) and all(f["vezes"] >= 3 for f in frequentes)
+    assert not any(marca in f["pergunta"] for f in frequentes)  # fora da lista aprovada, nunca aparece
+    with indexar.conectar() as cli:
+        from weaviate.classes.query import Filter
+        cli.collections.get("Pergunta").data.delete_many(where=Filter.by_property("pergunta").like(f"*{marca}*"))
 
 
 @pytest.mark.skipif(not api_no_ar(), reason="API fora do ar")
