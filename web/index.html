@@ -454,6 +454,7 @@
         comCitacoes(d.resposta, new Set(fontes.map((f) => f.n)), tl), partilha(pergunta, d, fontes, tl), ...listaFontes(fontes, tl)));
       $("saida").focus();
     } catch (err) {
+      if (status === 404) { mostrar(t.vazio, el("div", { className: "estado vazio", textContent: t.vazio })); return; }  // palestra sem trechos
       const msg = err.name === "TimeoutError" ? t.demora : !status ? t.rede : status === 429 ? t.ocupado
         : `${t.erro} (${status})`;
       mostrar(msg, el("div", { className: "estado erro" }, el("p", { textContent: msg }),

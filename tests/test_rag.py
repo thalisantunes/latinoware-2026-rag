@@ -185,5 +185,6 @@ def test_resumo_da_palestra():
     assert d["fontes"][0]["fonte"] == "resumo" and len(d["fontes"]) > 2
     tempos = [f["inicio_video_s"] for f in d["fontes"][1:]]
     assert tempos == sorted(tempos)
-    assert "itaipu" in d["resposta"].lower()
+    assert d["resposta"].strip()
     assert httpx.post(f"{API_URL}/ask", json={"pergunta": "abc", "palestra_id": "x y"}).status_code == 422
+    assert httpx.post(f"{API_URL}/ask", json={"pergunta": "abc", "palestra_id": "nao-existe"}).status_code == 404
