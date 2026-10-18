@@ -139,7 +139,8 @@ def test_ask_stream():
             elif linha.startswith("data: "):
                 ultimo = json.loads(linha[6:])
     sem_tokens = [e for e in eventos if e != "token"]
-    assert sem_tokens == ["etapa", "fontes", "etapa", "fim"]
+    # com reranker ligado há a etapa "reordenando" antes das fontes
+    assert sem_tokens in (["etapa", "fontes", "etapa", "fim"], ["etapa", "etapa", "fontes", "etapa", "fim"])
     assert eventos.count("token") > 1
     assert "home assistant" in ultimo["resposta"].lower()
 
@@ -192,6 +193,7 @@ def test_resumo_da_palestra():
 
 def test_reordenar(monkeypatch):
     trechos = [{"palestra_titulo": f"t{i}", "texto": "x"} for i in range(4)]
+    monkeypatch.setattr(api, "RERANK_LOCAL", "")  # o .env da estação liga o local; aqui testa o serviço
     monkeypatch.setattr(api, "RERANK_URL", "http://reranker")
     monkeypatch.setattr(api, "RERANK_TOP", 3)
 

@@ -4,7 +4,7 @@ POST /ask/stream: o mesmo corpo, resposta em SSE (eventos etapa, fontes, token, 
 Fluxo: embute a pergunta (bge-m3) -> busca híbrida (BM25 + vetor) na coleção Trecho ->
 monta contexto numerado -> LLM responde no idioma da pergunta, citando [n].
 
-LLM: Ollama local (LLM_MODEL, padrão qwen3:14b). Com LLM_API_KEY definida, usa um provedor
+LLM: Ollama local (LLM_MODEL, padrão gemma4:12b-it-qat). Com LLM_API_KEY definida, usa um provedor
 externo compatível com a API OpenAI (LLM_BASE_URL + LLM_MODEL).
 """
 
@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import re
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -29,15 +30,19 @@ from pydantic import BaseModel, Field
 
 OLLAMA = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
 EMBED_MODEL = os.environ.get("EMBED_MODEL", "bge-m3")
-LLM_MODEL = os.environ.get("LLM_MODEL", "qwen3:14b")
+LLM_MODEL = os.environ.get("LLM_MODEL", "gemma4:12b-it-qat")
 LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "https://api.openai.com/v1")
 LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
 ALPHA = float(os.environ.get("HYBRID_ALPHA", 0.75))  # 0 = só BM25, 1 = só vetor
-# reranker opcional (bge-reranker-v2-m3) com API no formato Jina/Cohere: {"query","documents"} -> results[]
+# reranker opcional (bge-reranker-v2-m3): na GPU desta máquina (RERANK_LOCAL, modelo do Hugging Face;
+# precisa de `uv sync --extra rerank`) ou num serviço no formato Jina/Cohere (RERANK_URL)
+RERANK_LOCAL = os.environ.get("RERANK_LOCAL", "")
 RERANK_URL = os.environ.get("RERANK_URL", "")
 RERANK_MODEL = os.environ.get("RERANK_MODEL", "bge-reranker-v2-m3")
-# em CPU o reranker leva ~0,4 s por trecho: só os primeiros RERANK_TOP, com o texto cortado
+# no serviço em CPU o reranker leva ~0,4 s por trecho: só os primeiros RERANK_TOP, com o texto cortado;
+# na GPU (RERANK_LOCAL) vão todos os candidatos inteiros (~0,25 s para 32)
 RERANK_TOP = int(os.environ.get("RERANK_TOP", 16))
+_reranker, _trava_reranker = None, threading.Lock()  # _reranker = False: a carga falhou, não tenta de novo
 CORS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "https://ilove.the.br,https://www.ilove.the.br,https://rede-cidades.pages.dev,https://latinoware.org,https://www.latinoware.org,http://localhost:8765").split(",")]
 MAX_TOKENS = int(os.environ.get("LLM_MAX_TOKENS", 800))
 # sem limite, uma palestra longa e bem transcrita ocupava 7 das 8 fontes
@@ -122,6 +127,8 @@ async def lifespan(app):
     app.state.wv = weaviate.connect_to_local(port=int(os.environ.get("WEAVIATE_HTTP_PORT", 18080)),
                                              grpc_port=int(os.environ.get("WEAVIATE_GRPC_PORT", 15051)))
     app.state.http = httpx.AsyncClient(timeout=180)
+    if RERANK_LOCAL:  # carrega na subida, não na primeira pergunta (download de ~2 GB na 1ª vez)
+        app.state.carga_reranker = asyncio.create_task(asyncio.to_thread(reranker_local))  # referência evita o GC
     yield
     app.state.wv.close()
     await app.state.http.aclose()
@@ -215,11 +222,38 @@ def candidatos(trecho, pergunta, vetor, k):
     return unicos
 
 
+def reranker_local():
+    """CrossEncoder em fp16 na GPU, carregado na primeira pergunta (~2 GB baixados na primeira vez)."""
+    global _reranker
+    with _trava_reranker:
+        if _reranker is None:
+            try:
+                import torch
+                from sentence_transformers import CrossEncoder
+                _reranker = CrossEncoder(RERANK_LOCAL, device="cuda", max_length=512,
+                                         model_kwargs={"dtype": torch.float16})
+            except Exception:
+                log.exception("reranker local não carregou (falta `uv sync --extra rerank`?); segue sem ele")
+                _reranker = False
+        return _reranker
+
+
 def reordenar(pergunta, trechos):
     """Ordena pelo reranker; se ele falhar, segue a ordem da busca (o /ask nunca cai por isso)."""
-    topo, resto = trechos[:RERANK_TOP], trechos[RERANK_TOP:]
-    if not RERANK_URL or len(topo) < 2:
+    topo, resto = (trechos, []) if RERANK_LOCAL else (trechos[:RERANK_TOP], trechos[RERANK_TOP:])
+    if not (RERANK_LOCAL or RERANK_URL) or len(topo) < 2:
         return trechos
+    if RERANK_LOCAL:
+        modelo = reranker_local()
+        if not modelo:
+            return trechos
+        try:
+            with _trava_reranker:  # uma inferência por vez na GPU
+                notas = modelo.predict([(pergunta, f"{t['palestra_titulo']}\n{t['texto']}") for t in topo])
+            return [t for _, t in sorted(zip(notas, topo), key=lambda x: -x[0])] + resto
+        except Exception:
+            log.exception("reranker local indisponível; segue sem reordenar")
+            return trechos
     try:
         r = httpx.post(RERANK_URL, timeout=30, json={
             "model": RERANK_MODEL, "query": pergunta,
@@ -284,7 +318,7 @@ async def passos(q):
         else:
             achados = await asyncio.to_thread(candidatos, app.state.wv.collections.get("Trecho"), q.pergunta,
                                               await embed(q.pergunta), q.k)
-            if RERANK_URL:
+            if RERANK_LOCAL or RERANK_URL:
                 yield "etapa", "reordenando"
                 achados = await asyncio.to_thread(reordenar, q.pergunta, achados)
             trechos = limitar(achados, q.k)
@@ -379,7 +413,7 @@ async def ask_stream(q: Pergunta):
 
 @app.get("/health")
 def health():
-    return {"ok": app.state.wv.is_ready(), "modelo": LLM_MODEL, "reranker": RERANK_MODEL if RERANK_URL else None}
+    return {"ok": app.state.wv.is_ready(), "modelo": LLM_MODEL, "reranker": (RERANK_LOCAL if _reranker is not False else None) or (RERANK_MODEL if RERANK_URL else None)}
 
 
 # página, componente e catálogo; montado por último para não engolir /ask e /health
