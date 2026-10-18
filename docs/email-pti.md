@@ -1,6 +1,6 @@
 # RASCUNHO: e-mail ao Itaipu Parquetec (não enviado)
 
-Rascunho para o Thalis revisar e enviar se quiser. Sem nomes nem endereços aqui (repositório público): preencher
+Rascunho para o Thalis revisar e enviar se quiser. Sem nomes nem endereços de terceiros aqui (repositório público): preencher
 os campos entre colchetes antes de enviar.
 
 ---
@@ -35,8 +35,8 @@ claramente. Se preferirem outro texto, logo ou que alguma palestra saia, é só 
 Quatro pedidos, quando der:
 
 1. **Vídeos do Espaço Iguaçu.** Três lives aparecem nas playlists oficiais, mas o YouTube mostra "vídeo
-   indisponível" por reivindicação de conteúdo da SME: `9Dck3H7xOGE` e `GSUcnRPFDpE` (16/10) e `KGIWmBq2t_A`
-   (15/10). Se for possível contestar a reivindicação ou republicar sem a música de espera, elas entram no
+   indisponível": `9Dck3H7xOGE` e `GSUcnRPFDpE` (16/10) e `KGIWmBq2t_A` (15/10); ao menos uma aparece com
+   reivindicação de conteúdo da SME. Se for possível contestar a reivindicação ou republicar sem o trecho reivindicado, elas entram no
    catálogo. O vídeo `bBumpPxxsQk` está privado; se puder ser público, também entra.
 2. **Espaço Argentina e demais salas sem live.** Se houver gravação (ou quando saírem os vídeos individuais),
    peço o link da playlist para ligar cada palestra ao seu vídeo.

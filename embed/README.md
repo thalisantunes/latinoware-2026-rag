@@ -22,9 +22,9 @@ jsDelivr also serves a minified copy if you replace `.js` with `.min.js`.
 | attribute | required | meaning |
 |---|---|---|
 | `src` | yes | URL of `catalogo.json` (served with `Access-Control-Allow-Origin: *`) |
-| `lang` | no | `pt`, `en` or `es`; default: page `<html lang>`, then the browser language. Read once, so page translators do not mix languages |
+| `lang` | no | `pt`, `en` or `es`; default: page `<html lang>`, then the browser language. Read on load and when the attribute changes, not when page translators change `<html lang>`, so languages do not mix |
 | `api` | no | RAG API URL (e.g. `https://rag.ilove.the.br`). Adds an "Ask about the talks" box and the "AI summary" button on each card. Without it, the component is a plain catalogue |
-| `perguntar` | no | shows "AI summary" but only fires the `perguntar` event (`detail.pergunta`, `detail.palestra_id`) for the host page to handle |
+| `perguntar` | no | shows "AI summary" and fires the `perguntar` event (bubbles, composed, cancelable; `detail.pergunta`, `palestra_id`, `uid`, `titulo`, `palestrantes`) for the host page; with `api`, calling `preventDefault()` turns off the built-in answer box |
 
 The API runs on a home GPU with no uptime guarantee; leave `api` out if the page must not depend on it.
 Filters are kept in the URL with the `lw_` prefix (`lw_data`, `lw_espaco`, `lw_busca`…), and `#palestra-<uid>`
@@ -67,9 +67,9 @@ jsDelivr también sirve una copia minificada si cambias `.js` por `.min.js`.
 | atributo | obligatorio | significado |
 |---|---|---|
 | `src` | sí | URL de `catalogo.json` (servido con `Access-Control-Allow-Origin: *`) |
-| `lang` | no | `pt`, `en` o `es`; por defecto, el `<html lang>` de la página y después el idioma del navegador. Se lee una vez, para que los traductores de página no mezclen idiomas |
+| `lang` | no | `pt`, `en` o `es`; por defecto, el `<html lang>` de la página y después el idioma del navegador. Se lee al cargar y cuando cambia el atributo, no cuando un traductor cambia el `<html lang>`, para no mezclar idiomas |
 | `api` | no | URL de la API de la RAG (p. ej. `https://rag.ilove.the.br`). Agrega una caja de preguntas y el botón "Resumen con IA" en cada tarjeta. Sin él, el componente es solo un catálogo |
-| `perguntar` | no | muestra "Resumen con IA" pero solo dispara el evento `perguntar` (`detail.pergunta`, `detail.palestra_id`) para que lo trate la página |
+| `perguntar` | no | muestra "Resumen con IA" y dispara el evento `perguntar` (bubbles, composed, cancelable; `detail.pergunta`, `palestra_id`, `uid`, `titulo`, `palestrantes`) para la página; con `api`, `preventDefault()` desactiva la caja de respuesta propia |
 
 La API corre en una GPU doméstica, sin garantía de disponibilidad; omite `api` si la página no puede depender de
 ella. Los filtros quedan en la URL con el prefijo `lw_` (`lw_data`, `lw_espaco`, `lw_busca`…) y
@@ -112,9 +112,9 @@ O jsDelivr também serve uma cópia minificada trocando `.js` por `.min.js`.
 | atributo | obrigatório | significado |
 |---|---|---|
 | `src` | sim | URL do `catalogo.json` (servido com `Access-Control-Allow-Origin: *`) |
-| `lang` | não | `pt`, `en` ou `es`; padrão: `<html lang>` da página e depois a língua do navegador. Lido uma vez, para tradutores de página não misturarem línguas |
+| `lang` | não | `pt`, `en` ou `es`; padrão: `<html lang>` da página e depois a língua do navegador. Lido ao carregar e quando o atributo muda, não quando um tradutor troca o `<html lang>`, para não misturar línguas |
 | `api` | não | URL da API da RAG (ex.: `https://rag.ilove.the.br`). Acrescenta uma caixa de perguntas e o botão "Resumo com IA" em cada card. Sem ele, o componente é só catálogo |
-| `perguntar` | não | mostra "Resumo com IA", mas só dispara o evento `perguntar` (`detail.pergunta`, `detail.palestra_id`) para a página tratar |
+| `perguntar` | não | mostra "Resumo com IA" e dispara o evento `perguntar` (bubbles, composed, cancelável; `detail.pergunta`, `palestra_id`, `uid`, `titulo`, `palestrantes`) para a página; com `api`, `preventDefault()` desliga a caixa de resposta própria |
 
 A API roda numa GPU doméstica, sem garantia de disponibilidade; deixe `api` de fora se a página não puder
 depender dela. Os filtros ficam na URL com prefixo `lw_` (`lw_data`, `lw_espaco`, `lw_busca`…) e
