@@ -73,7 +73,8 @@ def baixar(v):
     destino = AUDIO / f"{v['id']}.m4a"
     if destino.exists():
         return None
-    r = subprocess.run(YTDLP + cookies() + ["-x", "--audio-format", "m4a", "-f", "bestaudio",
+    # m4a nativo do YouTube: o ffmpeg só copia; recodificar opus -> aac roda em ~1x tempo real
+    r = subprocess.run(YTDLP + cookies() + ["-x", "--audio-format", "m4a", "-f", "bestaudio[ext=m4a]/bestaudio",
                                             "-o", str(AUDIO / "%(id)s.%(ext)s"), v["url"]],
                        capture_output=True, text=True)
     return None if r.returncode == 0 else (r.stderr.strip().splitlines() or ["erro"])[-1]
