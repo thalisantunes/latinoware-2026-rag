@@ -13,7 +13,9 @@
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!-- fonte sem bloquear a primeira pintura; até carregar vale a fonte do sistema -->
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<link rel="icon" href="data:,">
 <style>
   :root {
     --bg: #f7f6f1; --surface: #ffffff; --surface-2: #efede5; --fg: #1b1c19; --muted: #5d5e57;
@@ -87,14 +89,20 @@
     background: var(--accent-soft); vertical-align: 1px; }
   h2 { font-size: .8rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 32px 0 12px; font-weight: 600; }
   .fontes { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
-  .fonte { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px;
-    display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; scroll-margin-top: 16px; }
-  .fonte:target { border-color: var(--accent); }
-  .num { font: 500 .85rem/1.6 var(--mono); color: var(--muted); }
-  .titulo { font-weight: 600; overflow-wrap: anywhere; }
-  .meta { grid-column: 2; display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: .88rem; color: var(--muted); align-items: center; }
-  .tipo { font: 500 .75rem/1 var(--mono); text-transform: uppercase; letter-spacing: .04em; border: 1px solid var(--line);
-    border-radius: 4px; padding: 4px 6px; }
+  .fonte { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; }
+  .titulo { font-weight: 600; overflow-wrap: anywhere; display: block; }
+  .meta { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: .88rem; color: var(--muted); align-items: center; margin-top: 4px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; align-items: center; }
+  .chip { font: 500 .85rem/1 var(--sans); border: 1px solid var(--line-ui); border-radius: 999px; padding: 8px 12px;
+    min-height: 36px; display: inline-flex; align-items: center; gap: 6px; text-decoration: none; scroll-margin-top: 16px; }
+  .chip b { font: 500 .8rem/1 var(--mono); color: var(--muted); }
+  .chip:target { border-color: var(--accent); background: var(--accent-soft); }
+  .chip.video { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+  .chip.video b { color: inherit; }
+  .sem { font-size: .85rem; color: var(--muted); }
+  .ir { display: inline-block; margin-top: 16px; font-size: .95rem; }
+  section.bloco { margin-top: 48px; scroll-margin-top: 16px; }
+  section.bloco > h2 { font-size: 1.3rem; letter-spacing: 0; text-transform: none; color: var(--fg); margin: 0 0 16px; font-weight: 700; }
 
   footer { margin: 56px 0 32px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: .85rem; }
   footer p { margin: 0 0 6px; }
@@ -108,9 +116,9 @@
       <span class="marca">Latinoware 2026 · RAG</span>
       <div class="langs" role="group" id="langs" aria-label="Idioma">
         <button type="button" data-l="auto" id="auto">Auto</button>
-        <button type="button" data-l="pt" lang="pt" aria-label="Português">PT</button>
-        <button type="button" data-l="en" lang="en" aria-label="English">EN</button>
-        <button type="button" data-l="es" lang="es" aria-label="Español">ES</button>
+        <button type="button" data-l="pt" lang="pt" aria-label="PT, Português">PT</button>
+        <button type="button" data-l="en" lang="en" aria-label="EN, English">EN</button>
+        <button type="button" data-l="es" lang="es" aria-label="ES, Español">ES</button>
       </div>
     </div>
     <h1 id="h1">Pergunte sobre a Latinoware 2026</h1>
@@ -129,8 +137,17 @@
     </form>
     <span class="dica exemplos-rotulo" id="lex"></span>
     <ul class="exemplos" id="exemplos" aria-labelledby="lex"></ul>
+    <a class="ir" href="#catalogo" id="ir"></a>
     <p class="sr" id="anuncio" role="status"></p>
     <section id="saida" tabindex="-1"></section>
+    <section class="bloco" id="catalogo" aria-labelledby="hcat">
+      <h2 id="hcat"></h2>
+      <latinoware-catalogo src="./catalogo.json" perguntar></latinoware-catalogo>
+    </section>
+    <section class="bloco" id="sobre" aria-labelledby="hsobre">
+      <h2 id="hsobre"></h2>
+      <p id="sobretxt"></p>
+    </section>
   </main>
 
   <footer>
@@ -139,6 +156,7 @@
       <a href="https://github.com/thalisantunes/latinoware-2026-rag" id="repo"></a></p>
   </footer>
 </div>
+<script src="./latinoware-catalogo.js" defer></script>
 <script>
   const T = {
     pt: {
@@ -152,6 +170,10 @@
       erro: "Não foi possível responder agora.", ocupado: "Muitas perguntas ao mesmo tempo. Tente de novo em alguns segundos.",
       rede: "Sem conexão com o servidor de busca.", demora: "O servidor demorou demais para responder.", tentar: "Tentar de novo",
       tipo: { resumo: "Resumo", bio: "Palestrante", transcricao: "Vídeo" },
+      assistir: "Assistir no YouTube", semGravacao: "Sem gravação",
+      hcat: "Programação completa", ir: "Ver a programação completa ↓", hsobre: "Sobre",
+      sobre: ["Este projeto nasceu de uma conversa com ", "Duda Nogueira", " (", "Weaviate",
+        ") na fila de embarque do voo de volta da Latinoware: o evento tem cauda longa e não acaba quando acaba. Obrigado a ele e à Weaviate."],
       video: "Ver no vídeo a partir de", estimado: "horário estimado",
       aviso: "Projeto pessoal e não oficial, sem fins lucrativos e sem vínculo com a organização da Latinoware. As respostas são geradas por IA (modelo de linguagem): confira nas fontes.",
       dados: "Dados públicos de", repo: "Código no GitHub",
@@ -168,6 +190,10 @@
       erro: "Could not answer right now.", ocupado: "Too many questions at once. Try again in a few seconds.",
       rede: "Could not reach the search server.", demora: "The server took too long to answer.", tentar: "Try again",
       tipo: { resumo: "Abstract", bio: "Speaker", transcricao: "Video" },
+      assistir: "Watch on YouTube", semGravacao: "No recording",
+      hcat: "Full schedule", ir: "See the full schedule ↓", hsobre: "About",
+      sobre: ["This project was born from a conversation with ", "Duda Nogueira", " (", "Weaviate",
+        ") in the boarding line of the flight back from Latinoware: the event has a long tail and does not end when it ends. Thanks to him and to Weaviate."],
       video: "Watch from", estimado: "estimated time",
       aviso: "Personal, unofficial, non-profit project, not affiliated with the Latinoware organizers. Answers are generated by AI (a language model): check the sources.",
       dados: "Public data from", repo: "Code on GitHub",
@@ -184,6 +210,10 @@
       erro: "No se pudo responder ahora.", ocupado: "Demasiadas preguntas a la vez. Inténtalo de nuevo en unos segundos.",
       rede: "No se pudo conectar con el servidor de búsqueda.", demora: "El servidor tardó demasiado en responder.", tentar: "Intentar de nuevo",
       tipo: { resumo: "Resumen", bio: "Ponente", transcricao: "Video" },
+      assistir: "Ver en YouTube", semGravacao: "Sin grabación",
+      hcat: "Programación completa", ir: "Ver la programación completa ↓", hsobre: "Acerca de",
+      sobre: ["Este proyecto nació de una conversación con ", "Duda Nogueira", " (", "Weaviate",
+        ") en la fila de embarque del vuelo de regreso de Latinoware: el evento tiene una cola larga y no termina cuando termina. Gracias a él y a Weaviate."],
       video: "Ver el video desde", estimado: "hora estimada",
       aviso: "Proyecto personal y no oficial, sin fines de lucro y sin vínculo con la organización de Latinoware. Las respuestas las genera una IA (modelo de lenguaje): verifica las fuentes.",
       dados: "Datos públicos de", repo: "Código en GitHub",
@@ -210,7 +240,10 @@
   function aplicar() {
     const t = ui();
     document.documentElement.lang = t.html;
-    for (const k of ["h1", "sub", "lq", "dica", "lex", "aviso", "dados", "repo"]) $(k).textContent = t[k];
+    for (const k of ["h1", "sub", "lq", "dica", "lex", "aviso", "dados", "repo", "ir", "hcat", "hsobre"]) $(k).textContent = t[k];
+    const [a, duda, b, wv, c] = t.sobre;
+    $("sobretxt").replaceChildren(a, link(duda, "https://github.com/dudanogueira"), b, link(wv, "https://weaviate.io"), c);
+    document.querySelector("latinoware-catalogo").setAttribute("lang", lingua());
     $("q").placeholder = t.ph;
     $("b").textContent = ocupado ? t.enviando : t.enviar;
     $("auto").textContent = `Auto (${lingua().toUpperCase()})`;
@@ -236,29 +269,53 @@
     return p;
   }
 
-  function fonte(f, t) {
-    const meta = el("div", { className: "meta" }, el("span", { className: "tipo", textContent: t.tipo[f.fonte] || f.fonte }));
-    if (f.fonte !== "bio") {
-      const pessoas = Array.isArray(f.links_palestrantes) ? f.links_palestrantes.filter((p) => p && p.nome) : [];
-      if (pessoas.length) {
-        const span = el("span");
-        pessoas.forEach((p, i) => span.append(i ? ", " : "", link(p.nome, p.url)));
-        meta.append(span);
-      } else if (f.palestrantes) meta.append(el("span", { textContent: f.palestrantes }));
+  const normal = (s) => (s || "").normalize("NFD").replace(/[^\p{L}\p{N}]/gu, "").toLowerCase();
+  const limpo = (s) => (s || "").replace(/^['"“”‘’.\s]+|['"“”‘’\s]+$/g, "");
+  const chaveFonte = (f) => f.fonte === "bio" ? `bio|${f.url}` : `${normal(f.titulo)}|${f.inicio}`;
+  // vídeo da palestra pelo catálogo: o resumo de uma keynote pode ser de uma sala sem transmissão
+  let videos = null;
+  const catalogo = fetch("./catalogo.json", { signal: AbortSignal.timeout(10000) }).then((r) => r.json()).then((c) => {
+    videos = new Map(c.palestras.filter((p) => p.url_video).map((p) => [`${normal(p.titulo)}|${p.data}T${p.hora_inicio}`, p]));
+  }).catch(() => {}); // sem catálogo: sem fallback e sem "Sem gravação" (não dá para saber)
+
+  // uma entrada por palestra; cada fonte vira um chip [n] com id="fonte-n" (alvo das citações)
+  function palestra(grupo, t) {
+    const f0 = grupo.find((f) => f.fonte === "resumo") || grupo[0];
+    const meta = el("div", { className: "meta" });
+    const pessoas = Array.isArray(f0.links_palestrantes) ? f0.links_palestrantes.filter((p) => p && p.nome) : [];
+    if (f0.fonte !== "bio" && pessoas.length) {
+      const span = el("span");
+      pessoas.forEach((p, i) => span.append(i ? ", " : "", link(p.nome, p.url)));
+      meta.append(span);
     }
-    let titulo;
-    if (f.fonte === "transcricao" && Number.isInteger(f.inicio_video_s) && f.inicio_video_s >= 0) {
-      meta.append(link(`▶ ${t.video} ${hms(f.inicio_video_s)}`, f.url));
-      if (f.alinhamento === "estimado") meta.append(el("span", { textContent: `(${t.estimado})` }));
-      titulo = el("span", { textContent: f.titulo || f.palestrantes });
-    } else if (f.fonte === "bio") {
-      titulo = link(f.palestrantes, f.url);
-      if (f.titulo) meta.append(el("span", { textContent: f.titulo }));
-    } else {
-      titulo = link(f.titulo || f.palestrantes, f.url);
+    if (f0.espaco) meta.append(el("span", { textContent: f0.espaco }));
+    const nome = f0.fonte === "bio" ? f0.palestrantes : limpo(f0.titulo) || f0.palestrantes;
+    const chips = el("div", { className: "chips" });
+    for (const f of grupo) {
+      const video = f.fonte === "transcricao" && seguro(f.url_video) && Number.isInteger(f.video_t);
+      const a = link("", video ? f.url_video : f.url);
+      a.className = "chip"; a.id = `fonte-${f.n}`;
+      a.replaceChildren(el("b", { textContent: `[${f.n}]` }), video ? `▶ ${t.tipo.transcricao} ${hms(f.video_t)}` : t.tipo[f.fonte] || f.fonte);
+      chips.append(a);
+      if (video && f.alinhamento === "estimado") chips.append(el("span", { className: "sem", textContent: `(${t.estimado})` }));
     }
-    return el("li", { className: "fonte", id: `fonte-${f.n}` },
-      el("span", { className: "num", textContent: f.n }), el("span", { className: "titulo" }, titulo), meta);
+    const p = f0.fonte !== "bio" && videos?.get(`${normal(f0.titulo)}|${(f0.inicio || "").slice(0, 16)}`);
+    const comVideo = grupo.find((f) => f.fonte !== "transcricao" && seguro(f.url_video) && Number.isInteger(f.video_t))
+      || (p && { url_video: p.url_video, video_t: p.t_inicio });
+    if (comVideo) {
+      const a = link(`▶ ${t.assistir} (${hms(comVideo.video_t)})`, comVideo.url_video);
+      a.className = "chip video";
+      chips.append(a);
+    } else if (f0.fonte === "resumo" && !grupo.some((f) => seguro(f.url_video)) && videos) {
+      chips.append(el("span", { className: "sem", textContent: t.semGravacao }));
+    }
+    return el("li", { className: "fonte" }, el("span", { className: "titulo", textContent: nome }), meta, chips);
+  }
+
+  function agrupar(fontes) {
+    const grupos = new Map();
+    for (const f of fontes) (grupos.get(chaveFonte(f)) || grupos.set(chaveFonte(f), []).get(chaveFonte(f))).push(f);
+    return [...grupos.values()];
   }
 
   function mostrar(anuncio, ...nos) { $("anuncio").textContent = anuncio; $("saida").replaceChildren(...nos); }
@@ -280,12 +337,13 @@
         body: JSON.stringify(corpo), signal: AbortSignal.timeout(90000) });
       if (!r.ok) throw new Error(r.status);
       const d = await r.json();
+      await catalogo;
       const fontes = Array.isArray(d?.fontes) ? d.fontes.filter((f) => f && Number.isInteger(f.n)) : [];
       if (!fontes.length || typeof d.resposta !== "string") { mostrar(t.vazio, el("div", { className: "estado vazio", textContent: t.vazio })); return; }
       const tl = tem(d.idioma) ? T[d.idioma] : t;
       mostrar(tl.pronto, el("div", { lang: tl.html },
         comCitacoes(d.resposta, new Set(fontes.map((f) => f.n)), tl),
-        el("h2", { textContent: tl.fontes }), el("ol", { className: "fontes" }, ...fontes.map((f) => fonte(f, tl)))));
+        el("h2", { textContent: tl.fontes }), el("ul", { className: "fontes" }, ...agrupar(fontes).map((g) => palestra(g, tl)))));
       $("saida").focus();
     } catch (err) {
       const msg = err.name === "TimeoutError" ? t.demora : !r ? t.rede : r.status === 429 ? t.ocupado
@@ -308,7 +366,15 @@
     try { localStorage.setItem("idioma", escolha); } catch {}
     aplicar();
   });
+  document.addEventListener("perguntar", (e) => {
+    e.preventDefault();
+    if (ocupado) return; // não troca o texto de uma pergunta em andamento
+    $("q").value = e.detail.pergunta;
+    $("f").scrollIntoView({ block: "start" });
+    perguntar(e.detail.pergunta);
+  });
   aplicar();
+  try { const p = new URLSearchParams(location.search).get("pergunta"); if (p) $("q").value = p.slice(0, 1000); } catch {}
 </script>
 </body>
 </html>
