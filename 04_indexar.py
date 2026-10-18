@@ -98,9 +98,11 @@ def alinhar_palestras(palestras, videos, manual):
         for p in do_dia:
             ini = int((datetime.fromisoformat(p["inicio"]) - t0).total_seconds())
             fim = int((datetime.fromisoformat(p["fim"]) - t0).total_seconds())
-            if fim > 0 and ini < v["duracao"]:  # começou antes da live: vale a parte gravada
-                ini = max(ini, 0)
-                alinhadas[uid(p)] = {"video_id": v["id"], "t_inicio": ini, "t_fim": min(fim, v["duracao"]),
+            ini, fim = max(ini, 0), min(fim, v["duracao"])  # começou antes da live: vale a parte gravada
+            anterior = alinhadas.get(uid(p))
+            # duas lives no mesmo espaço e dia: fica a que gravou mais da palestra
+            if fim > ini and (not anterior or fim - ini > anterior["t_fim"] - anterior["t_inicio"]):
+                alinhadas[uid(p)] = {"video_id": v["id"], "t_inicio": ini, "t_fim": fim,
                                      "alinhamento": fonte, "url_video": url_video(v["id"], ini)}
     return alinhadas
 
@@ -182,8 +184,10 @@ def main():
     for p in palestras:
         for s in p["palestrantes"]:
             por_url.setdefault(s["url"], []).append(p["titulo"])
-            if uid(p) in alinhadas:  # bio leva ao vídeo da 1ª palestra gravada da pessoa
-                video_de.setdefault(s["url"], alinhadas[uid(p)]["url_video"])
+            a = alinhadas.get(uid(p))
+            # bio leva à palestra da pessoa com mais tempo gravado (não ao check-in de 1 min)
+            if a and a["t_fim"] - a["t_inicio"] > video_de.get(s["url"], (0, ""))[0]:
+                video_de[s["url"]] = (a["t_fim"] - a["t_inicio"], a["url_video"])
 
     trechos = []
     for p in palestras:
@@ -207,7 +211,7 @@ def main():
             "fonte": "bio", "palestra_id": "", "palestra_titulo": "; ".join(titulos),
             "palestrantes": s["nome"], "links_palestrantes": links([s]), "idioma_original": "",
             "espaco": "", "inicio": "",
-            "video_id": "", "inicio_video_s": 0, "url": s["url"], "url_video": video_de.get(s["url"], ""),
+            "video_id": "", "inicio_video_s": 0, "url": s["url"], "url_video": video_de.get(s["url"], (0, ""))[1],
             "alinhamento": "",
         })
     transcritos, relatorio = trechos_de_transcricao(palestras, videos, manual)

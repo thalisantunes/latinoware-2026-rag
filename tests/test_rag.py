@@ -66,6 +66,10 @@ def test_alinhar_palestras():
     assert list(a) == ["dentro@brasil"]
     assert a["dentro@brasil"] == {"video_id": "abc", "t_inicio": 3600, "t_fim": 6600,
                                   "alinhamento": "youtube", "url_video": "https://youtu.be/abc?t=3600"}
+    # segunda live curta no mesmo dia, das 10:40 às 11:00: a palestra fica com a live longa
+    videos.append({"id": "curta", "espaco": "Espaço Brasil", "data": "2026-10-14", "duracao": 1200,
+                   "inicio_live": 1791979200 + 6000})
+    assert indexar.alinhar_palestras(palestras, videos, {})["dentro@brasil"]["video_id"] == "abc"
 
 
 def api_no_ar():
