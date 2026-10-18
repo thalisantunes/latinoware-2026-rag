@@ -62,5 +62,5 @@ videos-individuais:
 # vídeos novos (ex.: os do Espaço Iguaçu, quando a reivindicação da SME cair): baixa, transcreve e reindexa;
 # make novos-videos VIDEOS="9Dck3H7xOGE GSUcnRPFDpE KGIWmBq2t_A" (os ids que ainda não aparecem nas listagens)
 novos-videos:
-	$(PY) 02_baixar_audio.py $(VIDEOS)
+	$(PY) 02_baixar_audio.py $(foreach v,$(VIDEOS),"$(v)")
 	$(MAKE) transcrever sincronizar indexar catalogo

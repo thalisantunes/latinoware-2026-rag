@@ -88,7 +88,7 @@ def main():
                    "gerado_em": datetime.now(timezone.utc).isoformat(timespec="seconds")},
         "videos": [{"id": v["id"], "titulo": v["titulo"], "espaco": v["espaco"], "data": v["data"],
                     "duracao_s": v["duracao"], "inicio_live": v.get("inicio_live"),
-                    "url": f"https://youtu.be/{v['id']}"} for v in videos if v.get("audio") is not False],
+                    "url": f"https://youtu.be/{v['id']}"} for v in videos if not v.get("indisponivel")],
         "palestras": saida,
         "palestrantes": [{"id": s["id"], "nome": s["nome"], "url": s["url"], "organizacao": s["organizacao"],
                           "pais": s["pais"], "palestras": uids_de.get(s["url"], []),
