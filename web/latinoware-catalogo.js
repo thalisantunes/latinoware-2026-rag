@@ -1,7 +1,7 @@
 // <latinoware-catalogo src="catalogo.json" lang="pt" api="https://rag.ilove.the.br" perguntar>
 // Catálogo de palestras da Latinoware com filtros e link para o instante na live.
 // Atributos: src (obrigatório), lang (pt|en|es), api (opcional: liga a pergunta à IA),
-// perguntar (opcional: mostra "Perguntar à IA" e só emite o evento "perguntar" para a página).
+// perguntar (opcional: mostra "Resumo com IA" e só emite o evento "perguntar" para a página).
 // Sem dependências e sem build. Projeto pessoal e não oficial: github.com/thalisantunes/latinoware-2026-rag
 (() => {
   const VERSAO = 1; // igual à "versao" de catalogo.json
@@ -14,8 +14,8 @@
       contador: n => n === 1 ? "1 atividade" : `${n} atividades`, nenhum: "Nenhuma atividade com esses filtros.",
       carregando: "Carregando programação…", erroCarga: "Não foi possível carregar a programação.",
       assistir: "Assistir no YouTube", estimado: "horário estimado", semGravacao: "Sem gravação",
-      noSite: "Resumo completo no site", perguntarIA: "Perguntar à IA",
-      pergunta: (t, p) => `Sobre o que foi a palestra "${t}"${p ? ` de ${p}` : ""}?`,
+      noSite: "Resumo completo no site", perguntarIA: "Resumo com IA",
+      pergunta: (t, p) => `Resuma a palestra "${t}"${p ? ` de ${p}` : ""}`,
       perguntaRotulo: "Pergunte sobre as palestras", enviar: "Perguntar", aguarde: "Buscando e escrevendo a resposta…",
       ocupado: "Muitas perguntas agora. Tente de novo em instantes.", demorou: "A resposta demorou demais. Tente de novo.",
       erro: "Não foi possível responder agora.", fontes: "Fontes", video: "Vídeo",
@@ -27,8 +27,8 @@
       contador: n => n === 1 ? "1 activity" : `${n} activities`, nenhum: "No activities match these filters.",
       carregando: "Loading schedule…", erroCarga: "Could not load the schedule.",
       assistir: "Watch on YouTube", estimado: "estimated time", semGravacao: "No recording",
-      noSite: "Full abstract on the website", perguntarIA: "Ask the AI",
-      pergunta: (t, p) => `What was the talk "${t}"${p ? ` by ${p}` : ""} about?`,
+      noSite: "Full abstract on the website", perguntarIA: "AI summary",
+      pergunta: (t, p) => `Summarize the talk "${t}"${p ? ` by ${p}` : ""}`,
       perguntaRotulo: "Ask about the talks", enviar: "Ask", aguarde: "Searching and writing the answer…",
       ocupado: "Too many questions right now. Try again shortly.", demorou: "The answer took too long. Try again.",
       erro: "Could not answer right now.", fontes: "Sources", video: "Video",
@@ -40,8 +40,8 @@
       contador: n => n === 1 ? "1 actividad" : `${n} actividades`, nenhum: "Ninguna actividad con estos filtros.",
       carregando: "Cargando programación…", erroCarga: "No se pudo cargar la programación.",
       assistir: "Ver en YouTube", estimado: "hora estimada", semGravacao: "Sin grabación",
-      noSite: "Resumen completo en el sitio", perguntarIA: "Preguntar a la IA",
-      pergunta: (t, p) => `¿De qué trató la charla "${t}"${p ? ` de ${p}` : ""}?`,
+      noSite: "Resumen completo en el sitio", perguntarIA: "Resumen con IA",
+      pergunta: (t, p) => `Resume la charla "${t}"${p ? ` de ${p}` : ""}`,
       perguntaRotulo: "Pregunta sobre las charlas", enviar: "Preguntar", aguarde: "Buscando y escribiendo la respuesta…",
       ocupado: "Demasiadas preguntas ahora. Inténtalo de nuevo en breve.", demorou: "La respuesta tardó demasiado. Inténtalo de nuevo.",
       erro: "No se pudo responder ahora.", fontes: "Fuentes", video: "Video",
@@ -291,13 +291,15 @@
 
     perguntar(g) {
       const pergunta = this.t.pergunta(g.titulo, g.palestrantes.map(s => s.nome).join(", "));
+      // a versão da sala com vídeo é a que tem transcrição no índice
+      const palestra_id = (g.video || g).id;
       const ev = new CustomEvent("perguntar", { bubbles: true, composed: true, cancelable: true,
-        detail: { pergunta, uid: g.uids[0], titulo: g.titulo, palestrantes: g.palestrantes } });
+        detail: { pergunta, palestra_id, uid: g.uids[0], titulo: g.titulo, palestrantes: g.palestrantes } });
       if (!this.dispatchEvent(ev) || !this.getAttribute("api")) return; // a página tratou
       const f = this.shadowRoot.querySelector(".ia");
       f.q.value = pergunta;
       f.scrollIntoView({ block: "start" });
-      this.enviar();
+      this.enviar(palestra_id);
     }
 
     // copiar (resposta + fontes em texto) e compartilhar (Web Share ou link copiado), com aviso para leitor de tela
@@ -320,7 +322,7 @@
       out.querySelector(".resp").after(caixa);
     }
 
-    async enviar() {
+    async enviar(palestra_id) {
       const t = this.t, f = this.shadowRoot.querySelector(".ia"), out = f.querySelector(".out");
       const pergunta = f.q.value.trim();
       if (pergunta.length < 3 || this.ocupado) return;
@@ -335,7 +337,8 @@
       }).join("")}</ol>`);
       const pedir = rota => fetch(`${this.getAttribute("api").replace(/\/$/, "")}${rota}`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pergunta, idioma: this.idioma }), signal: AbortSignal.timeout(90000) });
+        body: JSON.stringify({ pergunta, idioma: this.idioma, ...(palestra_id && { palestra_id }) }),
+        signal: AbortSignal.timeout(90000) });
       try {
         let r = await pedir("/ask/stream"), d;
         if (r.status === 404 || r.status === 405) r = await pedir("/ask"); // API sem streaming

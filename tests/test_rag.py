@@ -174,3 +174,17 @@ def test_primeira_fala():
     assert sinc.primeira_fala(segs, 200) == 400      # grade em silêncio: primeira fala depois
     assert sinc.primeira_fala(segs, 90) is None      # grade já com fala: fica a grade
     assert sinc.primeira_fala(segs, 110) is None     # fala começou antes e segue depois da grade
+
+
+@pytest.mark.skipif(not api_no_ar(), reason="API fora do ar")
+def test_resumo_da_palestra():
+    # "Resumo com IA": só trechos da palestra pedida, resumo do site primeiro e transcrição em ordem
+    d = httpx.post(f"{API_URL}/ask", timeout=300, json={
+        "pergunta": "Resuma a palestra \"Tecnologia, Energia e Comunidade\"", "palestra_id": "772-1742"}).json()
+    assert {f["palestra_id"] for f in d["fontes"]} == {"772-1742"}
+    assert d["fontes"][0]["fonte"] == "resumo" and len(d["fontes"]) > 2
+    tempos = [f["inicio_video_s"] for f in d["fontes"][1:]]
+    assert tempos == sorted(tempos)
+    assert d["resposta"].strip()
+    assert httpx.post(f"{API_URL}/ask", json={"pergunta": "abc", "palestra_id": "x y"}).status_code == 422
+    assert httpx.post(f"{API_URL}/ask", json={"pergunta": "abc", "palestra_id": "nao-existe"}).status_code == 404

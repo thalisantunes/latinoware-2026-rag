@@ -19,6 +19,7 @@ from pathlib import Path
 import httpx
 import uvicorn
 import weaviate
+from weaviate.classes.query import Filter
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -60,6 +61,20 @@ INSTRUCOES = {
            "responde no tiene ponente identificado, dilo, indica el espacio y el día y sugiere "
            "escuchar el video desde el instante indicado (h:mm:ss)."),
 }
+RESUMO = {
+    "pt": ("Você resume uma palestra da Latinoware 2026 usando SOMENTE os trechos numerados abaixo (resumo do "
+           "site e transcrição do vídeo, em ordem). Responda em português do Brasil: um parágrafo de 3 a 6 "
+           "frases e depois 3 pontos principais em lista. Cite as fontes pelo número, ex.: [1], [3]. Se só houver o resumo do site, "
+           "diga que a palestra não tem gravação transcrita e resuma o que o site informa."),
+    "en": ("You summarize a Latinoware 2026 talk using ONLY the numbered excerpts below (the website abstract "
+           "and the video transcript, in order), which may be in Portuguese. Answer in English: one paragraph "
+           "of 3 to 6 sentences, then 3 key points as a list. Cite sources by number, e.g. [1], [3]. If there is only the website "
+           "abstract, say the talk has no transcribed recording and summarize what the website says."),
+    "es": ("Resumes una charla de Latinoware 2026 usando SOLO los fragmentos numerados abajo (resumen del sitio "
+           "y transcripción del video, en orden), que pueden estar en portugués. Responde en español: un "
+           "párrafo de 3 a 6 frases y luego 3 puntos principales en lista. Cita las fuentes por número, p. ej. [1], [3]. Si solo "
+           "hay el resumen del sitio, di que la charla no tiene grabación transcrita y resume lo que dice el sitio."),
+}
 # lembrete no fim do prompt: com a pergunta em outra língua, só a instrução de sistema não basta
 LEMBRETE = {"pt": "Responda em português do Brasil.", "en": "Answer in English.",
             "es": "Responde en español."}
@@ -92,6 +107,8 @@ class Pergunta(BaseModel):
     pergunta: str = Field(min_length=3, max_length=1000)
     idioma: str | None = Field(default=None, pattern="^(pt|en|es)$")
     k: int = Field(default=8, ge=1, le=12)
+    # "Resumo com IA" de uma palestra: usa só os trechos dela, sem busca
+    palestra_id: str | None = Field(default=None, pattern=r"^[\w-]{1,40}$")
 
 
 @asynccontextmanager
@@ -169,6 +186,19 @@ def buscar(pergunta, vetor, k):
     return selecionar(app.state.wv.collections.get("Trecho"), pergunta, vetor, k)
 
 
+def da_palestra(palestra_id, k):
+    """Resumo do site primeiro e transcrição em ordem de tempo; acima de k, pedaços espalhados pela palestra."""
+    res = app.state.wv.collections.get("Trecho").query.fetch_objects(
+        filters=Filter.by_property("palestra_id").equal(palestra_id), limit=200)
+    objs = [o.properties for o in res.objects]
+    resumos = [t for t in objs if t["fonte"] == "resumo"][:1]  # keynote repete o resumo por sala
+    falas = sorted((t for t in objs if t["fonte"] == "transcricao"), key=lambda t: t["inicio_video_s"])
+    vagas = k - len(resumos)
+    if len(falas) > vagas:
+        falas = [falas[i * len(falas) // vagas] for i in range(vagas)]
+    return resumos + falas
+
+
 def selecionar(trecho, pergunta, vetor, k):
     """Busca híbrida e corte em k; também usada por 06_avaliar_busca.py."""
     res = trecho.query.hybrid(query=pergunta, vector=vetor, alpha=ALPHA, limit=k * 4)
@@ -213,12 +243,17 @@ async def preparar(q):
     """Idioma, prompt (sistema, usuário) e fontes; a geração fica para quem chama."""
     idioma = q.idioma or detectar_idioma(q.pergunta)
     try:
-        trechos = await asyncio.to_thread(buscar, q.pergunta, await embed(q.pergunta), q.k)
+        if q.palestra_id:
+            trechos = await asyncio.to_thread(da_palestra, q.palestra_id, max(q.k, 12))
+        else:
+            trechos = await asyncio.to_thread(buscar, q.pergunta, await embed(q.pergunta), q.k)
     except Exception:
         log.exception("falha na busca")
         raise HTTPException(503, "busca indisponível") from None
+    if q.palestra_id and not trechos:  # sem trechos o LLM inventaria um resumo
+        raise HTTPException(404, "palestra sem trechos indexados")
     contexto = "\n\n".join(f"[{i}] {cabecalho(t)}\n{t['texto']}" for i, t in enumerate(trechos, 1))
-    prompt = (INSTRUCOES[idioma], f"Trechos:\n{contexto}\n\nPergunta: {q.pergunta}\n\n{LEMBRETE[idioma]}")
+    prompt = ((RESUMO if q.palestra_id else INSTRUCOES)[idioma], f"Trechos:\n{contexto}\n\nPergunta: {q.pergunta}\n\n{LEMBRETE[idioma]}")
     # transcrições servem de contexto, mas não são devolvidas: só título, autor e link com tempo
     fontes = [{"n": i, "titulo": t["palestra_titulo"], "palestrantes": t["palestrantes"],
                "links_palestrantes": links(t.get("links_palestrantes")),

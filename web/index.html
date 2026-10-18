@@ -394,7 +394,7 @@
     return [el("h2", { textContent: t.fontes }), el("ul", { className: "fontes" }, ...agrupar(fontes).map((g) => palestra(g, t)))];
   }
 
-  async function perguntar(pergunta) {
+  async function perguntar(pergunta, palestraId) {
     if (ocupado) return;
     if (pergunta.length < 3) { $("q").focus(); return; }
     const t = ui();
@@ -416,6 +416,7 @@
     let status, fontes = [];
     const corpo = { pergunta };
     if (escolha !== "auto") corpo.idioma = escolha;
+    if (palestraId) corpo.palestra_id = palestraId;  // "Resumo com IA": só os trechos dessa palestra
     const pedir = (rota) => fetch(API_URL + rota, { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify(corpo), signal: AbortSignal.timeout(90000) });
     try {
@@ -453,10 +454,11 @@
         comCitacoes(d.resposta, new Set(fontes.map((f) => f.n)), tl), partilha(pergunta, d, fontes, tl), ...listaFontes(fontes, tl)));
       $("saida").focus();
     } catch (err) {
+      if (status === 404) { mostrar(t.vazio, el("div", { className: "estado vazio", textContent: t.vazio })); return; }  // palestra sem trechos
       const msg = err.name === "TimeoutError" ? t.demora : !status ? t.rede : status === 429 ? t.ocupado
         : `${t.erro} (${status})`;
       mostrar(msg, el("div", { className: "estado erro" }, el("p", { textContent: msg }),
-        el("button", { type: "button", textContent: t.tentar, onclick: () => perguntar(pergunta) })));
+        el("button", { type: "button", textContent: t.tentar, onclick: () => perguntar(pergunta, palestraId) })));
     } finally {
       ocupado = false;
       $("b").removeAttribute("aria-disabled"); $("b").textContent = ui().enviar;
@@ -479,7 +481,7 @@
     if (ocupado) return; // não troca o texto de uma pergunta em andamento
     $("q").value = e.detail.pergunta;
     $("f").scrollIntoView({ block: "start" });
-    perguntar(e.detail.pergunta);
+    perguntar(e.detail.pergunta, e.detail.palestra_id);
   });
   aplicar();
   try { const p = new URLSearchParams(location.search).get("pergunta"); if (p) $("q").value = p.slice(0, 1000); } catch {}
