@@ -53,6 +53,21 @@ def test_janelas_sobreposicao():
     assert janelas[0][-1] in janelas[1]  # o fim de um pedaço reaparece no começo do seguinte
 
 
+def test_alinhar_palestras():
+    def palestra(pid, inicio, fim):
+        return {"id": pid, "espaco": "Espaço Brasil", "inicio": f"2026-10-14T{inicio}:00-03:00",
+                "fim": f"2026-10-14T{fim}:00-03:00"}
+    palestras = [palestra("dentro", "10:00", "10:50"), palestra("antes", "08:00", "08:50"),
+                 palestra("depois", "13:00", "13:50")]
+    # live começou 09:00 BRT (12:00 UTC) e durou 3 h
+    videos = [{"id": "abc", "espaco": "Espaço Brasil", "data": "2026-10-14", "duracao": 3 * 3600,
+               "inicio_live": 1791979200}]
+    a = indexar.alinhar_palestras(palestras, videos, {})
+    assert list(a) == ["dentro@brasil"]
+    assert a["dentro@brasil"] == {"video_id": "abc", "t_inicio": 3600, "t_fim": 6600,
+                                  "alinhamento": "youtube", "url_video": "https://youtu.be/abc?t=3600"}
+
+
 def api_no_ar():
     try:
         return httpx.get(f"{API_URL}/health", timeout=5).json()["ok"]

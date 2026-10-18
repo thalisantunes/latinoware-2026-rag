@@ -52,7 +52,7 @@ def descobrir():
                     "espaco": "Espaço " + m["espaco"].strip(),
                     "data": f"2026-10-{m['dia']}",
                     "duracao": d.get("duration"),
-                    "url": f"https://www.youtube.com/watch?v={d['id']}",
+                    "url": f"https://youtu.be/{d['id']}",
                 }
     return sorted(videos.values(), key=lambda v: (v["data"], v["espaco"], v["id"]))
 
