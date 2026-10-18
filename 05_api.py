@@ -48,6 +48,9 @@ INSTRUCOES = {
            "Responde en español. Cita las fuentes con [n]. Si los fragmentos no contienen la "
            "respuesta, di que no la encontraste en las charlas indexadas."),
 }
+# lembrete no fim do prompt: com a pergunta em outra língua, só a instrução de sistema não basta
+LEMBRETE = {"pt": "Responda em português do Brasil.", "en": "Answer in English.",
+            "es": "Responde en español."}
 
 # palavras frequentes e exclusivas de cada língua, para detectar o idioma da pergunta
 MARCAS = {
@@ -150,7 +153,7 @@ async def responder(q):
         f"[{i}] {t['palestra_titulo']} | {t['palestrantes']} | fonte: {t['fonte']}\n{t['texto']}"
         for i, t in enumerate(trechos, 1))
     try:
-        resposta = await gerar(INSTRUCOES[idioma], f"Trechos:\n{contexto}\n\nPergunta: {q.pergunta}")
+        resposta = await gerar(INSTRUCOES[idioma], f"Trechos:\n{contexto}\n\nPergunta: {q.pergunta}\n\n{LEMBRETE[idioma]}")
         resposta = re.sub(r"<think>.*?</think>", "", resposta, flags=re.S).strip()
     except Exception:
         log.exception("falha no LLM")
