@@ -53,6 +53,10 @@ Design decisions:
   rerank` (always with `--extra rerank`, or a plain `uv sync` removes it) and `RERANK_LOCAL=BAAI/bge-reranker-v2-m3` in `.env`.
 - **Answer** with local `gemma4:12b-it-qat`, temperature 0.2, grounded only on the chunks, citing `[n]`
   (chosen by benchmark against qwen3:14b, qwen3.5 and ministral-3: `docs/benchmark-modelos.md`).
+- **Question history**: questions and answers are kept for 90 days in a `Pergunta` collection (no IP, no user
+  agent) and deleted automatically after that. An identical question (bge-m3 distance ≤ 0.05, same model and index)
+  reuses the stored answer, with a "Generate again" button; `/frequentes` lists only questions from a hand-curated list
+  (`data/frequentes_aprovadas.json`), since the text typed by visitors becomes public.
 
 ### Requirements
 
@@ -245,6 +249,10 @@ Decisiones:
 - **Respuesta** con `gemma4:12b-it-qat` local (elegido por benchmark frente a qwen3:14b, qwen3.5 y
   ministral-3: `docs/benchmark-modelos.md`), temperatura 0,2, basada solo en los fragmentos, citando
   `[n]`.
+- **Historial de preguntas**: preguntas y respuestas se guardan 90 días en una colección `Pergunta` (sin IP ni
+  user agent) y se borran solas después. Una pregunta igual (distancia bge-m3 ≤ 0,05, mismo modelo e índice)
+  reutiliza la respuesta guardada, con un botón "Generar de nuevo"; `/frequentes` solo lista preguntas de una lista revisada a mano
+  (`data/frequentes_aprovadas.json`), porque el texto que escriben los visitantes se vuelve público.
 
 ### Requisitos
 
@@ -436,6 +444,10 @@ Decisões:
   rerank` (sempre com `--extra rerank`, senão um `uv sync` simples o remove) e `RERANK_LOCAL=BAAI/bge-reranker-v2-m3` no `.env`.
 - **Resposta** com `gemma4:12b-it-qat` local, temperatura 0,2, só com base nos trechos, citando `[n]`
   (escolhido por benchmark contra qwen3:14b, qwen3.5 e ministral-3: `docs/benchmark-modelos.md`).
+- **Histórico de perguntas**: perguntas e respostas ficam 90 dias numa coleção `Pergunta` (sem IP nem user
+  agent) e são apagadas sozinhas depois. Pergunta igual (distância bge-m3 ≤ 0,05, mesmo modelo e índice)
+  reaproveita a resposta guardada, com botão "Gerar de novo"; `/frequentes` só lista perguntas de uma lista revisada à mão
+  (`data/frequentes_aprovadas.json`), porque o texto digitado pelos visitantes fica público.
 
 ### Requisitos
 

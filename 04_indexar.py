@@ -302,6 +302,8 @@ def main():
             erros = col.batch.failed_objects
             falhas += len(erros)
             print(f"{col.name}: {len(col)} objetos, {len(erros)} falhas")
+    if not falhas:  # índice novo: respostas guardadas no histórico da API deixam de ser reaproveitadas
+        (DATA / "versao_indice.txt").write_text(datetime.now(timezone.utc).isoformat(timespec="seconds"))
     sys.exit(1 if falhas else 0)
 
 
