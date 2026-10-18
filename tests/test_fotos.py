@@ -44,11 +44,10 @@ def test_nenhum_vetor_facial_no_git():
 
 
 def test_casar_filtra_plateia_e_deduplica(tmp_path, monkeypatch, capsys):
-    for nome, valor in (("FOTOS", tmp_path), ("REFS", tmp_path / "refs"), ("FLICKR", tmp_path / "fl"),
-                        ("VETORES", tmp_path / "vet")):
+    for nome, valor in (("FOTOS", tmp_path), ("REFS", tmp_path / "refs"), ("VETORES", tmp_path / "vet")):
         monkeypatch.setattr(fotos, nome, valor)
     (tmp_path / "referencias.json").write_text(json.dumps({"7": {"arquivo": "7.jpg"}, "8": {"arquivo": "8.jpg"}}))
-    (tmp_path / "flickr.json").write_text(json.dumps({"f1": {}}))
+    (tmp_path / "flickr.json").write_text(json.dumps({"f1": {"arquivo": "f1.jpg"}}))
     rostos = {"7.jpg": [([1, 0, 0], 100)], "8.jpg": [([0, 1, 0], 100)],
               # foto f1: o palestrante 7 no palco e no telão (dois rostos grandes) e o 8 pequeno ao fundo
               "f1.jpg": [([1, 0.05, 0], 100), ([1, 0.02, 0], 90), ([0, 1, 0], 10)]}
@@ -62,19 +61,48 @@ def test_casar_filtra_plateia_e_deduplica(tmp_path, monkeypatch, capsys):
     assert fotos.carregar("flickr")["f1"] == rostos["f1.jpg"]
 
 
-def test_coletar_album_pagina(tmp_path, monkeypatch):
-    monkeypatch.setattr(fotos, "FLICKR", tmp_path)
-    paginas = {1: [{"id": "a", "url_m": "m", "url_q": "q", "license": "4"}], 2: [{"id": "b", "url_m": "m", "license": "0"}]}
+def test_pasta_e_feed(tmp_path, monkeypatch):
+    monkeypatch.setattr(fotos, "FOTOS", tmp_path)
+    album = "https://www.flickr.com/photos/itaipuparquetec/albums/72177720300000001"
+    originais = tmp_path / "originais"
+    originais.mkdir()
+    for nome in ("LW26-001.jpg", "LW26-002.JPG", "leia-me.txt"):
+        (originais / nome).write_bytes(b"x")
+    (tmp_path / "albuns.json").write_text(json.dumps({"72177720300000001": {"autor": "Itaipu Parquetec", "licenca": "4"}}))
+    fotos.pasta(originais, album)
+    registradas = json.loads((tmp_path / "flickr.json").read_text())
+    assert sorted(registradas) == ["72177720300000001:LW26-001", "72177720300000001:LW26-002"]
+
+    class Resposta:
+        def __init__(self, texto="", dados=None):
+            self.text, self.dados = texto, dados
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self.dados
+
+    feed = {"items": [
+        {"title": "LW26-001", "link": "https://www.flickr.com/photos/itaipuparquetec/555/in/set-72177720300000001/",
+         "media": {"m": "https://live.staticflickr.com/65535/555_abc_m.jpg"}},
+        {"title": "LW26-099", "link": "https://www.flickr.com/photos/itaipuparquetec/999/", "media": {"m": "x_m.jpg"}}]}
 
     class Cliente:
-        def get(self, url, params=None):
-            class R:
-                def json(self_):
-                    return {"stat": "ok", "photoset": {"photo": paginas[params["page"]], "pages": 2, "owner": "pti",
-                                                       "ownername": "PTI", "title": "Latinoware 2026"}}
-            return R()
+        def __init__(self, **kw):
+            pass
 
-    monkeypatch.setattr(fotos, "baixar", lambda cli, url, destino: destino.write_bytes(b"x"))
-    coletadas = {"a": {}}  # já vista: não baixa de novo
-    assert fotos.coletar_album(Cliente(), "chave", "https://www.flickr.com/photos/pti/albums/72177720300000000", coletadas) == 1
-    assert coletadas["b"]["url_pagina"] == "https://www.flickr.com/photos/pti/b/" and coletadas["b"]["autor"] == "PTI"
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            pass
+
+        def get(self, url, params=None):
+            return Resposta(dados=feed) if params else Resposta('"nsid":"199299022@N06"')
+
+    monkeypatch.setattr(fotos.httpx, "Client", Cliente)
+    fotos.feed(album)
+    ligada = json.loads((tmp_path / "flickr.json").read_text())["72177720300000001:LW26-001"]
+    assert ligada["url_pagina"] == "https://www.flickr.com/photos/itaipuparquetec/555/"
+    assert ligada["url_thumb"] == "https://live.staticflickr.com/65535/555_abc_q.jpg"

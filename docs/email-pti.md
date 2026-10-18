@@ -42,6 +42,9 @@ Quatro pedidos, quando der:
    peço o link da playlist para ligar cada palestra ao seu vídeo.
 3. **Fotos do Flickr.** Para mostrar fotos de cada palestrante no catálogo, preciso dos links dos álbuns e da
    licença de uso das fotos (para exibir com crédito "Foto: [autor]/Latinoware" e link de volta ao Flickr).
+   Como o Flickr não emite mais chave de API gratuita, o mais simples é uma **pasta com os originais** de cada
+   álbum (link de download, como Google Drive ou WeTransfer), com os mesmos nomes de arquivo publicados no Flickr;
+   assim cada foto fica ligada à sua página no Flickr sem precisar de chave.
 4. **Reconhecimento facial para achar as fotos de cada palestrante.** A ideia de vocês é ótima, mas foto de
    rosto é dado biométrico, sensível pela LGPD (art. 11). Antes de rodar, preciso:
    - o OK por escrito do Itaipu Parquetec;

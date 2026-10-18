@@ -42,11 +42,12 @@ benchmark:
 testar:
 	uv run --with pytest pytest -q tests/
 
-# fotos dos palestrantes no Flickr oficial (ver 10_fotos.py): make fotos ALBUNS="<url do álbum> ..."
+# fotos dos palestrantes (ver 10_fotos.py): make fotos PASTA=<originais do PTI> ALBUM=<url do álbum no Flickr>
 FOTOS = uv run --extra fotos --extra rerank python 10_fotos.py
 fotos:
 	$(FOTOS) referencias
-	$(if $(ALBUNS),$(FOTOS) flickr $(ALBUNS))
+	$(if $(PASTA),$(FOTOS) pasta "$(PASTA)" "$(ALBUM)")
+	$(if $(ALBUM),$(FOTOS) feed "$(ALBUM)")
 	$(FOTOS) casar
 
 # apaga os vetores faciais quando o casamento final terminar
