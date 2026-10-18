@@ -6,9 +6,9 @@
 <title>Latinoware 2026 RAG</title>
 <meta name="description" content="Pergunte sobre as palestras e palestrantes da Latinoware 2026 em português, inglês ou espanhol.">
 <script>
-  // URL da API. Em ilove.the.br a página é estática e chama rag.ilove.the.br; em qualquer outro
-  // lugar ela é servida pela própria API (make api), então usa a mesma origem.
-  const API_URL = location.hostname === "ilove.the.br" ? "https://rag.ilove.the.br" : location.origin;
+  // URL da API. No site estático (ilove.the.br, www, *.pages.dev) a página chama rag.ilove.the.br;
+  // em qualquer outro lugar ela é servida pela própria API (make api), então usa a mesma origem.
+  const API_URL = /(^|\.)ilove\.the\.br$|\.pages\.dev$/.test(location.hostname) ? "https://rag.ilove.the.br" : location.origin;
 </script>
 <style>
   :root { --bg:#fafaf7; --fg:#1d1d1b; --muted:#66655f; --line:#dedcd3; --card:#fff; --accent:#1f6f50; }

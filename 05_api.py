@@ -28,7 +28,7 @@ LLM_MODEL = os.environ.get("LLM_MODEL", "qwen3:14b")
 LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "https://api.openai.com/v1")
 LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
 ALPHA = float(os.environ.get("HYBRID_ALPHA", 0.75))  # 0 = só BM25, 1 = só vetor
-CORS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "https://ilove.the.br,http://localhost:8765").split(",")]
+CORS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "https://ilove.the.br,https://www.ilove.the.br,https://rede-cidades.pages.dev,http://localhost:8765").split(",")]
 MAX_TOKENS = int(os.environ.get("LLM_MAX_TOKENS", 800))
 # a GPU atende poucas gerações por vez; acima disso a API responde 429 em vez de enfileirar
 GERACOES = asyncio.Semaphore(int(os.environ.get("MAX_CONCORRENCIA", 2)))
