@@ -1,11 +1,18 @@
-"""Etapa 10: fotos dos palestrantes no evento (Flickr oficial), por reconhecimento facial.
+"""Etapa 10: fotos dos palestrantes no evento (álbuns do Flickr oficial), por reconhecimento facial.
 
 Uso (precisa de `uv sync --extra fotos --extra rerank`):
-  python 10_fotos.py referencias          baixa a foto de cada palestrante do site latinoware.org
-  python 10_fotos.py flickr <álbum> ...   metadados + foto média de álbuns do Flickr (FLICKR_API_KEY no .env)
-  python 10_fotos.py casar                rostos das fotos novas x referências; limiar calibrado
-  python 10_fotos.py exportar             web/fotos.json só com os pares aprovados em data/fotos/revisao.json
-  python 10_fotos.py limpar               apaga os vetores faciais (fim do casamento)
+  python 10_fotos.py referencias              baixa a foto de cada palestrante do site latinoware.org
+  python 10_fotos.py pasta <dir> <álbum>      registra os originais enviados pelo organizador para um álbum
+  python 10_fotos.py feed <álbum>             liga as fotos locais às do Flickr (link e miniatura) e avisa as novas
+  python 10_fotos.py casar                    rostos das fotos novas x referências; limiar calibrado
+  python 10_fotos.py exportar                 web/fotos.json só com os pares aprovados em data/fotos/revisao.json
+  python 10_fotos.py limpar                   apaga os vetores faciais (fim do casamento)
+
+<álbum> é a URL do álbum no Flickr. Autor e licença de cada álbum vêm de data/fotos/albuns.json:
+{"<id do álbum>": {"autor": "Itaipu Parquetec", "licenca": "4"}} (códigos de licença em LICENCAS).
+Sem API do Flickr (não há mais chave gratuita): o feed público do álbum (sem chave) traz só as 20 fotos mais
+recentes, com link e miniatura; é usado para ligar foto local à página dela no Flickr (o título no Flickr é o
+nome do arquivo original) e para avisar quando o álbum ganhou fotos novas.
 
 Regras (decisão do Thalis, curador da Latinoware; biometria é dado sensível, LGPD art. 11):
 - vetores faciais só em data/fotos/embeddings/ (fora do git, permissão 700), apagados por `make fotos-limpar`;
@@ -29,7 +36,7 @@ import httpx
 RAIZ = Path(__file__).parent
 FOTOS = RAIZ / "data" / "fotos"
 REFS = FOTOS / "palestrantes"
-FLICKR = FOTOS / "flickr"
+IMAGENS = (".jpg", ".jpeg", ".png", ".webp")
 VETORES = FOTOS / "embeddings"
 MODELO, DETECTOR = "ArcFace", "retinaface"
 # distância cosseno ArcFace; o limiar sai da calibração (percentil baixo entre pessoas diferentes)
@@ -76,47 +83,76 @@ def referencias():
     print(f"referências: {len(refs)} de {len(pessoas)} palestrantes; sem foto: {len(faltam)}")
 
 
-def coletar_album(cli, chave, album, fotos):
-    """Fotos novas de um álbum do Flickr: metadados em `fotos` e foto média em data/fotos/flickr/."""
-    album_id, pagina, novas = re.search(r"(\d{10,})", album)[1], 1, 0
-    while True:
-        r = cli.get("https://api.flickr.com/services/rest/", params={
-            "method": "flickr.photosets.getPhotos", "api_key": chave, "photoset_id": album_id,
-            "extras": "license,owner_name,url_q,url_m,date_taken", "per_page": 500, "page": pagina,
-            "format": "json", "nojsoncallback": 1}).json()
-        if r.get("stat") != "ok":
-            raise ValueError(f"Flickr: {r.get('message')}")
-        conjunto = r["photoset"]
-        for f in conjunto["photo"]:
-            if f["id"] in fotos or not f.get("url_m"):
-                continue
-            baixar(cli, f["url_m"], FLICKR / f"{f['id']}.jpg")
-            fotos[f["id"]] = {"id": f["id"], "titulo": f.get("title", ""), "autor": conjunto.get("ownername", ""),
-                              "licenca": f.get("license"), "url_thumb": f.get("url_q"),
-                              "url_pagina": f"https://www.flickr.com/photos/{conjunto['owner']}/{f['id']}/",
-                              "album": conjunto.get("title", album_id), "data": f.get("datetaken")}
-            novas += 1
-        if pagina >= int(conjunto["pages"]):
-            return novas
-        pagina += 1
+def id_album(url):
+    m = re.search(r"/(?:albums|sets)/(\d{10,})", url or "")
+    if not m:
+        sys.exit(f"URL de álbum do Flickr inválida: {url!r} (esperado .../albums/<id>)")
+    return m[1]
 
 
-def flickr(albuns):
-    """Metadados (id, autor, licença, links) e foto média de cada álbum, via API pública do Flickr."""
-    chave = os.environ.get("FLICKR_API_KEY")
-    if not chave:
-        sys.exit("defina FLICKR_API_KEY no .env (chave gratuita em flickr.com/services/apps/create)")
-    FLICKR.mkdir(parents=True, exist_ok=True)
+def pasta(diretorio, album):
+    """Registra cada foto da pasta (originais do organizador) no álbum: arquivo local, autor e licença do álbum.
+    Link e miniatura ficam no álbum até o `feed` achar a página da foto no Flickr."""
+    aid = id_album(album)
+    albuns = json.loads((FOTOS / "albuns.json").read_text()) if (FOTOS / "albuns.json").exists() else {}
+    if aid not in albuns:
+        sys.exit(f"falta o álbum {aid} em data/fotos/albuns.json (autor e licença para o crédito)")
     arq = FOTOS / "flickr.json"
     fotos = json.loads(arq.read_text()) if arq.exists() else {}
-    antes = len(fotos)
-    try:
-        with httpx.Client(timeout=60) as cli:
-            for album in albuns:
-                coletar_album(cli, chave, album, fotos)
-    finally:  # o que já foi baixado fica registrado mesmo se um álbum falhar no meio
-        arq.write_text(json.dumps(fotos, ensure_ascii=False, indent=1))
-    print(f"flickr: {len(fotos) - antes} fotos novas, {len(fotos)} no total")
+    antes, vistos = len(fotos), {}
+    for f in sorted(Path(diretorio).rglob("*")):
+        if f.suffix.lower() not in IMAGENS:
+            continue
+        rel = f.relative_to(diretorio).with_suffix("").as_posix()  # subpastas entram no id
+        fid = f"{aid}:{rel}"
+        if fid in vistos:  # mesmo nome com extensão diferente: ficaria uma só
+            print(f"aviso: {f} e {vistos[fid]} têm o mesmo nome; renomeie um deles")
+            continue
+        vistos[fid] = f
+        entrada = fotos.setdefault(fid, {"id": fid, "titulo": f.stem, "album": aid, "autor": albuns[aid]["autor"],
+                                         "licenca": albuns[aid]["licenca"], "url_pagina": album, "url_thumb": None})
+        entrada["arquivo"] = str(f.resolve())  # pasta movida: o caminho novo vale, o link do Flickr fica
+    arq.write_text(json.dumps(fotos, ensure_ascii=False, indent=1))
+    print(f"pasta: {len(fotos) - antes} fotos novas registradas, {len(fotos)} no total")
+
+
+def feed(album):
+    """Feed público do álbum (sem chave, 20 mais recentes): liga foto local à página e miniatura no Flickr pelo
+    título (= nome do arquivo) e lista as fotos do Flickr que ainda não estão na pasta."""
+    aid = id_album(album)
+    with httpx.Client(timeout=60, follow_redirects=True, headers={"User-Agent": "latinoware-2026-rag"}) as cli:
+        m = re.search(r'"nsid":"(\d+@N\d+)"', cli.get(album).text)
+        if not m:
+            sys.exit(f"não achei o dono do álbum na página {album}")
+        nsid = m[1]
+        r = cli.get("https://www.flickr.com/services/feeds/photoset.gne",
+                    params={"set": aid, "nsid": nsid, "format": "json", "nojsoncallback": 1})
+        r.raise_for_status()
+    arq = FOTOS / "flickr.json"
+    fotos = json.loads(arq.read_text()) if arq.exists() else {}
+    por_titulo = {}
+    for f in fotos.values():
+        if "titulo" in f:
+            por_titulo.setdefault((f["album"], f["titulo"]), []).append(f)
+    ligadas, novas = 0, []
+    # o feed do Flickr escapa apóstrofo como \' (JSON inválido)
+    for item in json.loads(r.text.replace("\\'", "'"))["items"]:
+        titulo = Path(item["title"]).stem if Path(item["title"]).suffix.lower() in IMAGENS else item["title"]
+        locais = por_titulo.get((aid, titulo), [])
+        if not locais:
+            novas.append(titulo)
+            continue
+        if len(locais) > 1:  # mesmo nome em subpastas: não dá para saber qual é
+            print(f"aviso: {len(locais)} fotos locais chamadas {titulo}; nenhuma ligada")
+            continue
+        local = locais[0]
+        if local["url_thumb"] is None:
+            local["url_pagina"] = item["link"].split("/in/")[0].rstrip("/") + "/"
+            local["url_thumb"] = item["media"]["m"].replace("_m.", "_q.")  # miniatura quadrada 150 px
+            ligadas += 1
+    arq.write_text(json.dumps(fotos, ensure_ascii=False, indent=1))
+    print(f"feed: {ligadas} fotos ligadas ao Flickr; {len(novas)} do Flickr ainda fora da pasta"
+          + (f": {', '.join(novas)}" if novas else ""))
 
 
 def vetores_de(caminho):
@@ -163,11 +199,14 @@ def casar():
             vet_refs[pid] = max(faces, key=lambda f: f[1])[0] if faces else None
     guardar("referencias", vet_refs)
     vet_fotos = carregar("flickr")
-    novas = [fid for fid in fotos if fid not in vet_fotos]  # incremental: só fotos ainda não vistas
+    sem_arquivo = [fid for fid, f in fotos.items() if not f.get("arquivo")]
+    if sem_arquivo:
+        print(f"aviso: {len(sem_arquivo)} fotos sem arquivo local (rode `pasta`); ficam de fora")
+    novas = [fid for fid, f in fotos.items() if fid not in vet_fotos and f.get("arquivo")]  # só fotos não vistas
     try:
         for i, fid in enumerate(novas, 1):
             try:
-                vet_fotos[fid] = vetores_de(FLICKR / f"{fid}.jpg")
+                vet_fotos[fid] = vetores_de(fotos[fid]["arquivo"])
             except ValueError as e:
                 print(f"  {fid}: {e}")
             if i % 50 == 0:  # um erro adiante não perde o que já foi calculado
@@ -244,8 +283,10 @@ def limpar():
 if __name__ == "__main__":
     comando = sys.argv[1] if len(sys.argv) > 1 else ""
     acoes = {"referencias": referencias, "casar": casar, "exportar": exportar, "limpar": limpar}
-    if comando == "flickr":
-        flickr(sys.argv[2:])
+    if comando == "pasta" and len(sys.argv) == 4:
+        pasta(sys.argv[2], sys.argv[3])
+    elif comando == "feed" and len(sys.argv) == 3:
+        feed(sys.argv[2])
     elif comando in acoes:
         acoes[comando]()
     else:

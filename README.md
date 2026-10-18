@@ -163,6 +163,16 @@ talk abstracts and speaker bios.
 - Index: 2293 excerpts (236 abstracts, 168 bios, 1889 from transcripts; 89 of these fall
   outside the schedule). Search recall@8 = 9/10.
 
+### Speaker photos
+
+`make fotos PASTA=<originals> ALBUM=<Flickr album URL>` registers the original photos sent by the organizers
+(author and licence per album in `data/fotos/albuns.json`), links them to their Flickr pages through the album's
+public feed (no API key; Flickr no longer issues free keys; the feed only lists the 20 most recent photos, so
+older ones link to the album without a thumbnail),
+and matches faces to the speakers' photos on latinoware.org (DeepFace, CPU). Face vectors stay in
+`data/fotos/embeddings/` (outside git) and are deleted with `make fotos-limpar`. Every match is reviewed by a
+person before `web/fotos.json` is exported; the page shows the Flickr thumbnail with credit and a removal contact.
+
 ### Legal notice
 
 Personal, non-profit and **unofficial** project: not affiliated with the Latinoware organizers
@@ -345,6 +355,16 @@ los resúmenes de las charlas y las biografías de los ponentes.
 - Índice: 2293 fragmentos (236 resúmenes, 168 bios, 1889 de transcripciones; 89 de ellos fuera
   de la programación). recall@8 de la búsqueda = 9/10.
 
+### Fotos de los ponentes
+
+`make fotos PASTA=<originales> ALBUM=<URL del álbum en Flickr>` registra las fotos originales enviadas por la
+organización (autor y licencia por álbum en `data/fotos/albuns.json`), las enlaza con su página en Flickr
+mediante el feed público del álbum (sin clave de API; Flickr ya no emite claves gratuitas; el feed solo trae
+las 20 fotos más recientes, y las anteriores enlazan al álbum sin miniatura) y compara rostros con las fotos de los ponentes en latinoware.org (DeepFace, CPU).
+Los vectores faciales quedan en `data/fotos/embeddings/` (fuera de git) y se borran con `make fotos-limpar`.
+Cada coincidencia la revisa una persona antes de exportar `web/fotos.json`; la página muestra la miniatura de
+Flickr con crédito y un contacto para retirarla.
+
 ### Aviso legal
 
 Proyecto personal, sin fines de lucro y **no oficial**: no tiene relación con la organización
@@ -524,6 +544,16 @@ resumos das palestras e as bios dos palestrantes.
   certo. As lives do Espaço Iguaçu são quase só música de espera: 3 delas quase não têm fala.
 - Índice: 2293 trechos (236 resumos, 168 bios, 1889 de transcrições; 89 destes fora da grade).
   recall@8 da busca = 9/10.
+
+### Fotos dos palestrantes
+
+`make fotos PASTA=<originais> ALBUM=<URL do álbum no Flickr>` registra as fotos originais enviadas pela
+organização (autor e licença por álbum em `data/fotos/albuns.json`), liga as fotos às páginas delas no Flickr pelo
+feed público do álbum (sem chave de API; o Flickr não emite mais chave gratuita; o feed só traz as 20 fotos
+mais recentes, e as anteriores ficam com link para o álbum, sem miniatura) e compara os rostos com as fotos dos palestrantes em latinoware.org (DeepFace, CPU). Os vetores
+faciais ficam em `data/fotos/embeddings/` (fora do git) e são apagados com `make fotos-limpar`. Cada casamento é
+revisado por uma pessoa antes de exportar `web/fotos.json`; a página mostra a miniatura do Flickr com crédito e um
+contato para remoção.
 
 ### Aviso legal
 

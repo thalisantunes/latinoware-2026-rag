@@ -21,7 +21,7 @@
       ocupado: "Muitas perguntas agora. Tente de novo em instantes.", demorou: "A resposta demorou demais. Tente de novo.",
       erro: "Não foi possível responder agora.", fontes: "Fontes", video: "Vídeo",
       copiar: "Copiar resposta", compartilhar: "Compartilhar", paginaSite: "Página no site da Latinoware", fotosEvento: "Fotos no evento", foto: "Foto",
-      fotoDe: n => `${n} na Latinoware`, remover: "Quer remover uma foto? Escreva para",
+      fotoDe: n => `${n} na Latinoware`, noFlickr: "Foto no Flickr", remover: "Quer remover uma foto? Escreva para",
       copiado: "Resposta copiada.", linkCopiado: "Link copiado.", naoCopiou: "Não foi possível copiar.",
     },
     en: {
@@ -36,7 +36,7 @@
       ocupado: "Too many questions right now. Try again shortly.", demorou: "The answer took too long. Try again.",
       erro: "Could not answer right now.", fontes: "Sources", video: "Video",
       copiar: "Copy answer", compartilhar: "Share", paginaSite: "Page on the Latinoware website", fotosEvento: "Photos at the event", foto: "Photo",
-      fotoDe: n => `${n} at Latinoware`, remover: "Want a photo removed? Write to",
+      fotoDe: n => `${n} at Latinoware`, noFlickr: "Photo on Flickr", remover: "Want a photo removed? Write to",
       copiado: "Answer copied.", linkCopiado: "Link copied.", naoCopiou: "Could not copy.",
     },
     es: {
@@ -51,7 +51,7 @@
       ocupado: "Demasiadas preguntas ahora. Inténtalo de nuevo en breve.", demorou: "La respuesta tardó demasiado. Inténtalo de nuevo.",
       erro: "No se pudo responder ahora.", fontes: "Fuentes", video: "Video",
       copiar: "Copiar respuesta", compartilhar: "Compartir", paginaSite: "Página en el sitio de Latinoware", fotosEvento: "Fotos en el evento", foto: "Foto",
-      fotoDe: n => `${n} en Latinoware`, remover: "¿Quieres quitar una foto? Escribe a",
+      fotoDe: n => `${n} en Latinoware`, noFlickr: "Foto en Flickr", remover: "¿Quieres quitar una foto? Escribe a",
       copiado: "Respuesta copiada.", linkCopiado: "Enlace copiado.", naoCopiou: "No se pudo copiar.",
     },
   };
@@ -332,8 +332,9 @@
       caixa.innerHTML = `${p.foto ? `<img class="rosto" src="${url(p.foto)}" alt="" width="96" height="96">` : ""}
         <div><h2 id="pessoa-nome">${esc(p.nome)}</h2><p class="sem">${esc([p.organizacao, p.pais].filter(Boolean).join(" · "))}</p>
         <p><a href="${url(p.url)}">${esc(t.paginaSite)}</a></p></div>${fotos.length ? `<h3>${esc(t.fotosEvento)}</h3>
-        <ul class="galeria">${fotos.map(f => `<li><a href="${url(f.url_pagina)}" target="_blank" rel="noopener"><img
-          src="${url(f.url_thumb)}" alt="${esc(t.fotoDe(p.nome))} (Flickr)" loading="lazy" width="150" height="150"></a>
+        <ul class="galeria">${fotos.map(f => `<li><a href="${url(f.url_pagina)}" target="_blank" rel="noopener">${f.url_thumb
+          ? `<img src="${url(f.url_thumb)}" alt="${esc(t.fotoDe(p.nome))} (Flickr)" loading="lazy" width="150" height="150">`
+          : esc(t.noFlickr)}</a>
           <small>${esc(t.foto)}: ${esc(f.autor)}/Latinoware${f.licenca_nome ? ` · ${esc(f.licenca_nome)}` : ""}</small></li>`).join("")}</ul>` : ""}
         <p class="sem">${esc(t.remover)} <a href="mailto:privacidade@ilove.the.br">privacidade@ilove.the.br</a></p>`;
     }
