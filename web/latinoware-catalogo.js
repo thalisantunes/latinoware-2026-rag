@@ -57,7 +57,7 @@
   };
 
   const CSS = `
-    :host { display: block; font: inherit; color: inherit;
+    :host { display: block; font: inherit; color: inherit; container-type: inline-size;
       --a: var(--lw-accent, var(--accent, light-dark(#17694a, #5cc595)));
       --af: var(--lw-accent-fg, var(--accent-fg, light-dark(#fff, #0d1f16)));
       --l: var(--lw-line, color-mix(in srgb, currentColor 22%, transparent));
@@ -106,6 +106,18 @@
     .galeria { list-style: none; padding: 0; display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
     .galeria img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; display: block; }
     .galeria small { color: var(--m); font-size: .75rem; }
+    /* contêiner largo (a largura do site que hospeda, não a da janela): filtros numa linha, cards em grade */
+    @container (min-width: 1000px) {
+      .filtros { grid-template-columns: 2fr repeat(4, 1fr); }
+      .busca { grid-column: auto; }
+      ul.lista { grid-template-columns: repeat(2, 1fr); }
+      ul.lista > li { display: flex; } /* cards da mesma linha com a mesma altura */
+      ul.lista article { flex: 1; }
+      .pessoa { grid-template-columns: 180px 1fr; align-items: start; }
+      .pessoa .rosto { width: 180px; height: 180px; grid-row: span 4; }
+      .pessoa > h3, .pessoa > ul, .pessoa > .sem { grid-column: 2; }
+    }
+    @container (min-width: 1500px) { ul.lista { grid-template-columns: repeat(3, 1fr); } }
     .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
     @media (prefers-reduced-motion: no-preference) { article { transition: border-color .15s; } }
   `;
