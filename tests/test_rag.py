@@ -170,6 +170,7 @@ def test_inicio_lido_e_manual(tmp_path, monkeypatch):
 
 def test_primeira_fala():
     sinc = modulo("08_sincronizar_inicio.py")
-    segs = [{"inicio": 100, "texto": "x"}, {"inicio": 400, "texto": "y"}]
+    segs = [{"inicio": 100, "fim": 130, "texto": "x"}, {"inicio": 400, "fim": 420, "texto": "y"}]
     assert sinc.primeira_fala(segs, 200) == 400      # grade em silêncio: primeira fala depois
     assert sinc.primeira_fala(segs, 90) is None      # grade já com fala: fica a grade
+    assert sinc.primeira_fala(segs, 110) is None     # fala começou antes e segue depois da grade

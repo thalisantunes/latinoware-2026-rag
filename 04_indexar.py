@@ -118,13 +118,12 @@ def alinhar_palestras(palestras, videos, manual, inicios=True):
     if inicios:
         lidos = carregar_json(DATA / "inicios.json", {})
         for u, a in alinhadas.items():
-            if isinstance(manual.get(u), int):
-                t, como = manual[u], "manual"
-            elif lidos.get(u, {}).get("video_id") == a["video_id"]:
-                t, como = lidos[u]["t"], "transcricao"
-            else:
-                continue
-            if 0 <= t < a["t_fim"]:
+            candidatos = [(manual.get(u), "manual")]
+            if lidos.get(u, {}).get("video_id") == a["video_id"]:
+                candidatos.append((lidos[u]["t"], "transcricao"))
+            # o primeiro válido vence: manual fora do vídeo não descarta o lido da transcrição
+            t, como = next(((t, c) for t, c in candidatos if isinstance(t, int) and 0 <= t < a["t_fim"]), (None, None))
+            if t is not None:
                 a.update(t_inicio=t, alinhamento=como, url_video=url_video(a["video_id"], t))
     return alinhadas
 
@@ -154,7 +153,7 @@ def janelas(segmentos):
         yield pedaco
 
 
-def trechos_de_transcricao(palestras, videos, manual):
+def trechos_de_transcricao(palestras, videos, manual, alinhadas=None):
     trechos, relatorio = [], []
     for v in videos:
         arq = DATA / "transcricoes" / f"{v['id']}.json"
@@ -164,11 +163,20 @@ def trechos_de_transcricao(palestras, videos, manual):
         do_dia, t0, fonte = live_do_espaco(v, palestras, videos, manual)
         relatorio.append({"video": v["id"], "titulo": v["titulo"], "alinhamento": fonte,
                           "palestras_no_espaco": len(do_dia)})
+        # janela de cada palestra em segundos do vídeo; com início real (transcrição ou manual) a janela
+        # anda junto, senão os minutos de atraso iriam para a palestra anterior
+        faixas = []
+        for p in do_dia if t0 else []:
+            ini = (datetime.fromisoformat(p["inicio"]) - t0).total_seconds()
+            fim = (datetime.fromisoformat(p["fim"]) - t0).total_seconds()
+            a = (alinhadas or {}).get(uid(p))
+            if a and a["video_id"] == v["id"] and a["alinhamento"] in ("transcricao", "manual"):
+                fim, ini = fim + a["t_inicio"] - max(ini, 0), a["t_inicio"]
+            faixas.append((ini, fim, p))
         por_palestra = {}
         for s in segs:
-            hora = t0 + timedelta(seconds=s["inicio"]) if t0 else None
-            dona = next((p for p in do_dia if hora and datetime.fromisoformat(p["inicio"]) <= hora
-                         < datetime.fromisoformat(p["fim"])), None)
+            # sobreposição (anterior atrasou): vale a que começou por último
+            dona = max(((i, p) for i, f, p in faixas if i <= s["inicio"] < f), key=lambda x: x[0], default=(0, None))[1]
             por_palestra.setdefault(dona["id"] if dona else None, []).append(s)
         por_id = {p["id"]: p for p in do_dia}
         for pid, ss in por_palestra.items():
@@ -236,7 +244,7 @@ def main():
             "video_id": "", "inicio_video_s": 0, "url": s["url"], "url_video": video_de.get(s["url"], (0, ""))[1],
             "alinhamento": "",
         })
-    transcritos, relatorio = trechos_de_transcricao(palestras, videos, manual)
+    transcritos, relatorio = trechos_de_transcricao(palestras, videos, manual, alinhadas)
     trechos += transcritos
     print(f"trechos: {len(trechos)} (resumos {len(palestras)}, bios {len(pessoas)}, "
           f"transcrição {len(transcritos)})")

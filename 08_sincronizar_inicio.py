@@ -13,7 +13,6 @@ Rode com a API parada ou fora do horário de uso: ocupa a GPU por alguns minutos
 import importlib.util
 import json
 import os
-import sys
 from pathlib import Path
 
 import httpx
@@ -44,7 +43,8 @@ def blocos(segs, ini):
     for s in segs:
         k = int((s["inicio"] - inicio) // 60)
         if 0 <= k < len(textos):
-            textos[k].append(s["texto"].strip())
+            if s["texto"].strip():
+                textos[k].append(s["texto"].strip())
     return inicio, [" ".join(t)[:600] for t in textos]
 
 
@@ -68,7 +68,7 @@ def perguntar(cli, p, textos):
 
 def primeira_fala(segs, ini):
     """Se a grade cai em silêncio, o início é a primeira fala depois dela (até LIMITE); senão, a grade."""
-    if any(ini <= s["inicio"] < ini + 60 for s in segs):
+    if any(s["inicio"] < ini + 60 and s["fim"] > ini for s in segs):  # inclui fala que já vinha de antes
         return None
     return next((int(s["inicio"]) for s in segs if ini <= s["inicio"] < ini + LIMITE), None)
 
@@ -78,7 +78,9 @@ def main():
     palestras = json.loads((data / "site" / "palestras.json").read_text())
     videos = json.loads((data / "videos.json").read_text())
     por_uid = {indexar.uid(p): p for p in palestras}
-    alinhadas = indexar.alinhar_palestras(palestras, videos, {}, inicios=False)
+    # inícios de live corrigidos à mão valem aqui; os de palestra (inicios=False) são o que se calcula
+    alinhadas = indexar.alinhar_palestras(palestras, videos, indexar.carregar_json(RAIZ / "alinhamento.json", {}),
+                                          inicios=False)
     saida, segs = {}, {}
     with httpx.Client() as cli:
         for u, a in sorted(alinhadas.items()):
@@ -100,7 +102,8 @@ def main():
             print(f"  {u}: grade {a['t_inicio']} s -> {t} s ({t - a['t_inicio']:+d} s, {como})")
     (data / "inicios.json").write_text(json.dumps(saida, ensure_ascii=False, indent=1))
     print(f"inicios.json: {len(saida)} de {len(alinhadas)} palestras com início lido da transcrição")
-    sys.exit(0 if saida else 1)
+    if not saida:
+        print("aviso: nenhum início lido (faltam transcrições?); vale a grade")
 
 
 if __name__ == "__main__":
