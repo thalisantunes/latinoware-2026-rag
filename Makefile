@@ -80,8 +80,11 @@ metricas:
 # timer systemd --user que roda `make metricas` toda segunda às 08:00 (deploy/systemd, caminho preenchido aqui)
 UNITS = $(HOME)/.config/systemd/user
 instalar-timer:
+	@test -x .venv/bin/python || { echo "falta .venv: rode uv sync antes"; exit 1; }
+	@case "$(CURDIR)" in *[\ \#\&\\%]*) echo "caminho do repo com espaço, #, &, % ou \\: o systemd não aceita"; exit 1;; esac
 	mkdir -p $(UNITS)
-	for f in deploy/systemd/latinoware-rag-metricas.*; do sed 's#@RAIZ@#$(CURDIR)#g' $$f > $(UNITS)/$$(basename $$f); done
+	for f in deploy/systemd/latinoware-rag-metricas.*; do sed 's#@RAIZ@#$(CURDIR)#g' $$f > $(UNITS)/$$(basename $$f) || exit 1; done
 	systemctl --user daemon-reload
 	systemctl --user enable --now latinoware-rag-metricas.timer
 	systemctl --user list-timers latinoware-rag-metricas.timer --no-pager
+	@loginctl show-user $$USER -p Linger | grep -q yes || echo "aviso: sem linger o timer só roda com sessão aberta (loginctl enable-linger $$USER)"

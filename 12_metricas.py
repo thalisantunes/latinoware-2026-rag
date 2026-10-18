@@ -8,7 +8,7 @@ spec = importlib.util.spec_from_file_location("api", Path(__file__).parent / "05
 api = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(api)
 
-fim = datetime.now(api.BRT).date()
+fim = datetime.now(api.BRT).date() - timedelta(days=1)  # 7 dias completos até ontem (segunda a domingo no timer)
 eventos = [e for i in range(7) for e in api.ler_metricas(fim - timedelta(days=i))]
 r = api.resumo(eventos)
 idiomas = ", ".join(f"{k} {v}" for k, v in sorted(r["idiomas"].items()))
