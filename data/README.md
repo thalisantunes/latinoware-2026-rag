@@ -15,3 +15,8 @@ palestrantes e da organização do evento. O repositório distribui só o códig
 reconstrói o índice a partir das fontes públicas. Transcrições e índices não são
 redistribuídos: a API usa as transcrições como contexto para gerar a resposta, mas devolve
 só título, palestrante e link para o vídeo no instante citado.
+
+Exceção: `web/catalogo.json` (gerado por `07_exportar_catalogo.py`, `make catalogo`) fica no
+repositório. Ele traz só metadados da grade (título, horário, espaço, palestrantes com link),
+um resumo curto de até 280 caracteres com link para o texto completo no site e o link para o
+instante da palestra na live. Sem bios, sem resumo completo e sem transcrição.
