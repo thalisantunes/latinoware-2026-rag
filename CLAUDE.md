@@ -4,7 +4,7 @@ Repositório público: só código, docs e testes. `data/` (áudio, transcriçõ
 dados do evento, e-mails, IPs, tokens ou nomes de hosts internos. O README é trilíngue (en/es/pt); mudanças de comportamento atualizam os três.
 
 - Idioma de trabalho: português brasileiro, respostas curtas. Comandos Bash com caminho absoluto.
-- Pipeline e comandos: `Makefile` (`make weaviate`, `coletar`, `audio`, `transcrever`, `sincronizar`, `indexar` (avalia a busca no fim), `catalogo`, `api`, `avaliar`, `gabarito-candidatos`, `testar`, `benchmark`, `metricas`, `fotos`, `videos-individuais`, `novos-videos`); configuração em `.env` (modelo em `.env.example`, valores sem aspas).
+- Pipeline e comandos: `Makefile` (`make weaviate`, `coletar`, `audio`, `transcrever`, `sincronizar`, `indexar` (versões novas + troca de alias, sem tirar a API do ar; avalia a busca no fim), `reverter-indice`, `catalogo`, `api`, `avaliar`, `gabarito-candidatos`, `testar`, `benchmark`, `metricas`, `fotos`, `videos-individuais`, `novos-videos`); configuração em `.env` (modelo em `.env.example`, valores sem aspas).
 - Testes antes de qualquer PR: `make testar` (= `uv run --with pytest pytest`; 26 testes; usam a API e o Weaviate locais). Estado dos dados: seção "Data status" do README.
 - Fluxo: um PR pequeno por item, revisão por 3 modelos, `merge --squash`; nada direto na `main` (o benchmark entrou direto e é o contraexemplo).
 - Produção: a API roda na estação (unit de usuário `latinoware-rag-api`, túnel reverso) e serve https://rag.ilove.the.br; `/health` é o smoke. Trocar modelo ou reranker só fora do horário de pico e com aviso na página; a GPU é compartilhada.

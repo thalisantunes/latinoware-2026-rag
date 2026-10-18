@@ -1,6 +1,9 @@
 """Etapa 4: monta chunks, gera embeddings bge-m3 (Ollama) e carrega no Weaviate.
 
-Coleções (recriadas a cada execução):
+Coleções: cada execução cria versões novas (Trecho_<versão> etc.), carrega tudo e só então aponta o alias
+(Trecho, Palestra, Palestrante) para elas, sem tirar a API do ar; com falha, o alias fica no índice anterior.
+Fica a versão anterior para `python 04_indexar.py --reverter`; as mais antigas são apagadas.
+
 - Palestra: uma por atividade da grade
 - Palestrante: uma por pessoa
 - Trecho: unidade de busca da RAG. Inclui resumos de palestras, bios de palestrantes e,
@@ -258,10 +261,9 @@ def main():
     vet_pessoas = vetores[len(palestras):len(palestras) + len(pessoas)]
 
     texto = lambda n: Property(name=n, data_type=DataType.TEXT)  # noqa: E731
+    versao = datetime.now(timezone.utc).strftime("V%Y%m%dT%H%M%S")
     with conectar() as cli:
-        for nome in ("Palestra", "Palestrante", "Trecho"):
-            cli.collections.delete(nome)
-        col_p = cli.collections.create("Palestra", vector_config=Configure.Vectors.self_provided(),
+        col_p = cli.collections.create(f"Palestra_{versao}", vector_config=Configure.Vectors.self_provided(),
                                        properties=[texto(n) for n in ("pid", "titulo", "resumo", "trilha",
                                                    "espaco", "inicio", "fim", "idioma", "tipo",
                                                    "palestrantes", "url", "video_id", "alinhamento")]
@@ -269,10 +271,10 @@ def main():
                                           Property(name="t_fim", data_type=DataType.INT),
                                           Property(name="url_video", data_type=DataType.TEXT,
                                                    index_searchable=False, index_filterable=False)])
-        col_s = cli.collections.create("Palestrante", vector_config=Configure.Vectors.self_provided(),
+        col_s = cli.collections.create(f"Palestrante_{versao}", vector_config=Configure.Vectors.self_provided(),
                                        properties=[texto(n) for n in ("nome", "bio", "organizacao",
                                                    "pais", "url", "palestras")])
-        col_t = cli.collections.create("Trecho", vector_config=Configure.Vectors.self_provided(),
+        col_t = cli.collections.create(f"Trecho_{versao}", vector_config=Configure.Vectors.self_provided(),
                                        properties=[texto(n) for n in ("texto", "fonte", "palestra_id",
                                                    "palestra_titulo", "palestrantes", "idioma_original",
                                                    "espaco", "inicio", "video_id", "url", "alinhamento")]
@@ -304,10 +306,50 @@ def main():
             erros = col.batch.failed_objects
             falhas += len(erros)
             print(f"{col.name}: {len(col)} objetos, {len(erros)} falhas")
-    if not falhas:  # índice novo: respostas guardadas no histórico da API deixam de ser reaproveitadas
-        (DATA / "versao_indice.txt").write_text(datetime.now(timezone.utc).isoformat(timespec="seconds"))
-    sys.exit(1 if falhas else 0)
+        if falhas:  # o alias continua no índice anterior; a versão quebrada sai
+            for nome in COLECOES:
+                cli.collections.delete(f"{nome}_{versao}")
+            sys.exit(1)
+        trocar_alias(cli, versao)
+    # índice novo: respostas guardadas no histórico da API deixam de ser reaproveitadas
+    (DATA / "versao_indice.txt").write_text(versao)
+
+
+COLECOES = ("Palestra", "Palestrante", "Trecho")
+
+
+def versoes(cli, nome):
+    """Versões de uma coleção, da mais nova para a mais antiga."""
+    return sorted((c for c in cli.collections.list_all() if c.startswith(f"{nome}_V")), reverse=True)
+
+
+def trocar_alias(cli, versao):
+    """Aponta Trecho/Palestra/Palestrante para a versão nova e apaga as anteriores à de reserva."""
+    aliases = cli.alias.list_all()
+    for nome in COLECOES:
+        alvo = f"{nome}_{versao}"
+        if nome in aliases:
+            cli.alias.update(alias_name=nome, new_target_collection=alvo)
+        else:
+            if cli.collections.exists(nome):  # 1ª vez: a coleção antiga com o nome do alias sai (segundos)
+                cli.collections.delete(nome)
+            cli.alias.create(alias_name=nome, target_collection=alvo)
+        for velha in versoes(cli, nome)[2:]:  # fica a atual e a anterior (para --reverter)
+            cli.collections.delete(velha)
+        print(f"alias {nome} -> {alvo}")
+
+
+def reverter():
+    """Volta os aliases para a versão anterior (ex.: a avaliação da busca piorou)."""
+    with conectar() as cli:
+        anteriores = {nome: versoes(cli, nome)[1:2] for nome in COLECOES}
+        if not all(anteriores.values()):
+            sys.exit("não há versão anterior para voltar")
+        for nome, (velha,) in anteriores.items():
+            cli.alias.update(alias_name=nome, new_target_collection=velha)
+            print(f"alias {nome} -> {velha}")
+    (DATA / "versao_indice.txt").write_text(anteriores["Trecho"][0].split("_", 1)[1])
 
 
 if __name__ == "__main__":
-    main()
+    reverter() if "--reverter" in sys.argv else main()

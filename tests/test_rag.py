@@ -305,3 +305,37 @@ def test_gabarito_extra(tmp_path, monkeypatch):
     (tmp_path / "gabarito_extra.json").write_text(json.dumps([["Pergunta sem título esperado", ""]]))
     with pytest.raises(SystemExit):  # esperado vazio casaria com tudo
         avaliar.gabarito()
+
+
+def test_trocar_alias_guarda_so_atual_e_anterior():
+    class Colecoes:
+        def __init__(self, nomes):
+            self.nomes = set(nomes)
+
+        def list_all(self):
+            return {n: None for n in self.nomes}
+
+        def exists(self, nome):
+            return nome in self.nomes
+
+        def delete(self, nome):
+            self.nomes.discard(nome)
+
+    class Alias:
+        def __init__(self):
+            self.mapa = {"Trecho": "Trecho_V1", "Palestra": "Palestra_V1", "Palestrante": "Palestrante_V1"}
+
+        def list_all(self):
+            return dict(self.mapa)
+
+        def update(self, alias_name, new_target_collection):
+            self.mapa[alias_name] = new_target_collection
+
+    class Cliente:
+        collections = Colecoes([f"{n}_V{v}" for n in indexar.COLECOES for v in (1, 2, 3)])
+        alias = Alias()
+
+    cli = Cliente()
+    indexar.trocar_alias(cli, "V3")
+    assert cli.alias.mapa["Trecho"] == "Trecho_V3"
+    assert indexar.versoes(cli, "Trecho") == ["Trecho_V3", "Trecho_V2"]  # a V1 saiu; a V2 fica para reverter

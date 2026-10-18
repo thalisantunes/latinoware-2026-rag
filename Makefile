@@ -4,7 +4,7 @@ export
 
 PY = uv run python
 
-.PHONY: tudo weaviate coletar audio transcrever sincronizar indexar catalogo api testar avaliar benchmark fotos fotos-limpar videos-individuais novos-videos metricas gabarito-candidatos instalar-timer publicar-site
+.PHONY: tudo weaviate coletar audio transcrever sincronizar indexar catalogo api testar avaliar benchmark fotos fotos-limpar videos-individuais novos-videos metricas gabarito-candidatos instalar-timer publicar-site reverter-indice
 # catalogo antes de indexar: não depende do índice e fica pronto mesmo se a avaliação da busca falhar
 tudo: weaviate coletar audio transcrever sincronizar catalogo indexar
 
@@ -36,6 +36,10 @@ api:
 
 avaliar:
 	$(PY) 06_avaliar_busca.py
+
+# volta o índice para a versão anterior (ex.: a avaliação falhou depois de make indexar)
+reverter-indice:
+	$(PY) 04_indexar.py --reverter
 
 # sugestões de perguntas do histórico para o gabarito (conferir à mão antes de usar)
 gabarito-candidatos:
