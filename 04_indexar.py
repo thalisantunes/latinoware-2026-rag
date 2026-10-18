@@ -5,7 +5,7 @@ Coleções (recriadas a cada execução):
 - Palestrante: uma por pessoa
 - Trecho: unidade de busca da RAG. Inclui resumos de palestras, bios de palestrantes e,
   quando houver transcrição, pedaços de ~350 palavras (com sobreposição) de cada palestra,
-  com link para o vídeo no instante certo (&t=).
+  com link para o vídeo no instante certo (?t=).
 
 Alinhamento live -> grade: cada live é um dia inteiro de um espaço. O instante t do vídeo
 vira hora do dia com o início da live, tirado nesta ordem de:
@@ -70,6 +70,43 @@ def inicio_da_live(video, palestras_do_dia, manual, lives_no_dia):
     return None, None
 
 
+def uid(p):
+    """id da grade não é único (keynotes repetem por sala): a chave junta id e espaço."""
+    return f"{p['id']}@{chave_espaco(p['espaco'])}"
+
+
+def url_video(video_id, t):
+    return f"https://youtu.be/{video_id}?t={t}"
+
+
+def live_do_espaco(v, palestras, videos, manual):
+    """Palestras do espaço e dia da live, e o instante em que a live começou."""
+    do_dia = [p for p in palestras if p["inicio"].startswith(v["data"])
+              and chave_espaco(p["espaco"]) == chave_espaco(v["espaco"])]
+    lives_no_dia = sum(1 for x in videos if x["data"] == v["data"]
+                       and chave_espaco(x["espaco"]) == chave_espaco(v["espaco"]))
+    return do_dia, *inicio_da_live(v, do_dia, manual, lives_no_dia)
+
+
+def alinhar_palestras(palestras, videos, manual):
+    """{uid: video_id, t_inicio, t_fim, alinhamento, url_video} das palestras que caem dentro de uma live."""
+    alinhadas = {}
+    for v in videos:
+        do_dia, t0, fonte = live_do_espaco(v, palestras, videos, manual)
+        if not t0 or not v.get("duracao"):
+            continue
+        for p in do_dia:
+            ini = int((datetime.fromisoformat(p["inicio"]) - t0).total_seconds())
+            fim = int((datetime.fromisoformat(p["fim"]) - t0).total_seconds())
+            ini, fim = max(ini, 0), min(fim, v["duracao"])  # começou antes da live: vale a parte gravada
+            anterior = alinhadas.get(uid(p))
+            # duas lives no mesmo espaço e dia: fica a que gravou mais da palestra
+            if fim > ini and (not anterior or fim - ini > anterior["t_fim"] - anterior["t_inicio"]):
+                alinhadas[uid(p)] = {"video_id": v["id"], "t_inicio": ini, "t_fim": fim,
+                                     "alinhamento": fonte, "url_video": url_video(v["id"], ini)}
+    return alinhadas
+
+
 def links(palestrantes):
     return json.dumps([{"nome": s["nome"], "url": s["url"]} for s in palestrantes], ensure_ascii=False)
 
@@ -102,11 +139,7 @@ def trechos_de_transcricao(palestras, videos, manual):
         if not arq.exists():
             continue
         segs = json.loads(arq.read_text())["segmentos"]
-        do_dia = [p for p in palestras if p["inicio"].startswith(v["data"])
-                  and chave_espaco(p["espaco"]) == chave_espaco(v["espaco"])]
-        lives_no_dia = sum(1 for x in videos if x["data"] == v["data"]
-                           and chave_espaco(x["espaco"]) == chave_espaco(v["espaco"]))
-        t0, fonte = inicio_da_live(v, do_dia, manual, lives_no_dia)
+        do_dia, t0, fonte = live_do_espaco(v, palestras, videos, manual)
         relatorio.append({"video": v["id"], "titulo": v["titulo"], "alinhamento": fonte,
                           "palestras_no_espaco": len(do_dia)})
         por_palestra = {}
@@ -132,7 +165,8 @@ def trechos_de_transcricao(palestras, videos, manual):
                     "inicio": p["inicio"] if p else v["data"],
                     "video_id": v["id"],
                     "inicio_video_s": ini,
-                    "url": f"{v['url']}&t={ini}s",
+                    "url": url_video(v["id"], ini),
+                    "url_video": url_video(v["id"], ini),
                     "alinhamento": fonte or "",
                 })
     return trechos, relatorio
@@ -144,10 +178,16 @@ def main():
     videos = carregar_json(DATA / "videos.json", [])
     manual = carregar_json(RAIZ / "alinhamento.json", {})
 
-    por_url = {}
+    alinhadas = alinhar_palestras(palestras, videos, manual)
+    print(f"palestras com vídeo: {len(alinhadas)} de {len(palestras)}")
+    por_url, video_de = {}, {}
     for p in palestras:
         for s in p["palestrantes"]:
             por_url.setdefault(s["url"], []).append(p["titulo"])
+            a = alinhadas.get(uid(p))
+            # bio leva à palestra da pessoa com mais tempo gravado (não ao check-in de 1 min)
+            if a and a["t_fim"] - a["t_inicio"] > video_de.get(s["url"], (0, ""))[0]:
+                video_de[s["url"]] = (a["t_fim"] - a["t_inicio"], a["url_video"])
 
     trechos = []
     for p in palestras:
@@ -160,7 +200,7 @@ def main():
             "palestrantes": nomes, "links_palestrantes": links(p["palestrantes"]),
             "idioma_original": IDIOMA.get(p.get("idioma"), ""),
             "espaco": p["espaco"], "inicio": p["inicio"], "video_id": "", "inicio_video_s": 0,
-            "url": p["url"], "alinhamento": "",
+            "url": p["url"], "url_video": alinhadas.get(uid(p), {}).get("url_video", ""), "alinhamento": "",
         })
     for s in pessoas:
         org = f" ({s['organizacao']})" if s["organizacao"] else ""
@@ -171,7 +211,8 @@ def main():
             "fonte": "bio", "palestra_id": "", "palestra_titulo": "; ".join(titulos),
             "palestrantes": s["nome"], "links_palestrantes": links([s]), "idioma_original": "",
             "espaco": "", "inicio": "",
-            "video_id": "", "inicio_video_s": 0, "url": s["url"], "alinhamento": "",
+            "video_id": "", "inicio_video_s": 0, "url": s["url"], "url_video": video_de.get(s["url"], (0, ""))[1],
+            "alinhamento": "",
         })
     transcritos, relatorio = trechos_de_transcricao(palestras, videos, manual)
     trechos += transcritos
@@ -191,7 +232,11 @@ def main():
         col_p = cli.collections.create("Palestra", vector_config=Configure.Vectors.self_provided(),
                                        properties=[texto(n) for n in ("pid", "titulo", "resumo", "trilha",
                                                    "espaco", "inicio", "fim", "idioma", "tipo",
-                                                   "palestrantes", "url")])
+                                                   "palestrantes", "url", "video_id", "alinhamento")]
+                                       + [Property(name="t_inicio", data_type=DataType.INT),
+                                          Property(name="t_fim", data_type=DataType.INT),
+                                          Property(name="url_video", data_type=DataType.TEXT,
+                                                   index_searchable=False, index_filterable=False)])
         col_s = cli.collections.create("Palestrante", vector_config=Configure.Vectors.self_provided(),
                                        properties=[texto(n) for n in ("nome", "bio", "organizacao",
                                                    "pais", "url", "palestras")])
@@ -202,6 +247,8 @@ def main():
                                        + [Property(name="inicio_video_s", data_type=DataType.INT),
                                           # só para exibir: fora da busca BM25 (URLs e nomes repetidos)
                                           Property(name="links_palestrantes", data_type=DataType.TEXT,
+                                                   index_searchable=False, index_filterable=False),
+                                          Property(name="url_video", data_type=DataType.TEXT,
                                                    index_searchable=False, index_filterable=False)])
         with col_p.batch.fixed_size(200) as b:
             for p, vec in zip(palestras, vet_palestras):
@@ -209,7 +256,8 @@ def main():
                     "pid": p["id"], "titulo": p["titulo"], "resumo": p["resumo"], "trilha": p["trilha"],
                     "espaco": p["espaco"], "inicio": p["inicio"], "fim": p["fim"],
                     "idioma": p.get("idioma", ""), "tipo": p["tipo"], "url": p["url"],
-                    "palestrantes": ", ".join(s["nome"] for s in p["palestrantes"])}, vector=vec)
+                    "palestrantes": ", ".join(s["nome"] for s in p["palestrantes"])}
+                    | alinhadas.get(uid(p), {}), vector=vec)
         with col_s.batch.fixed_size(200) as b:
             for s, vec in zip(pessoas, vet_pessoas):
                 b.add_object(properties={
