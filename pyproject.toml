@@ -22,6 +22,10 @@ rerank = [
     "sentence-transformers==5.1.1",
     "torch==2.8.0",
 ]
+fotos = [
+    "deepface==0.0.95",
+    "tf-keras==2.21.0",
+]
 
 [tool.uv]
 package = false

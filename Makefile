@@ -4,7 +4,7 @@ export
 
 PY = uv run python
 
-.PHONY: tudo weaviate coletar audio transcrever sincronizar indexar catalogo api testar avaliar benchmark
+.PHONY: tudo weaviate coletar audio transcrever sincronizar indexar catalogo api testar avaliar benchmark fotos fotos-limpar
 tudo: weaviate coletar audio transcrever sincronizar indexar catalogo
 
 weaviate:
@@ -41,3 +41,14 @@ benchmark:
 
 testar:
 	uv run --with pytest pytest -q tests/
+
+# fotos dos palestrantes no Flickr oficial (ver 10_fotos.py): make fotos ALBUNS="<url do álbum> ..."
+FOTOS = uv run --extra fotos --extra rerank python 10_fotos.py
+fotos:
+	$(FOTOS) referencias
+	$(if $(ALBUNS),$(FOTOS) flickr $(ALBUNS))
+	$(FOTOS) casar
+
+# apaga os vetores faciais quando o casamento final terminar
+fotos-limpar:
+	$(FOTOS) limpar
