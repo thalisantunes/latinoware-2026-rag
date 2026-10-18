@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Exemplo: latinoware-catalogo</title>
+<style>
+  body { margin: 0 auto; max-width: 760px; padding: 0 16px; font: 16px/1.6 system-ui, sans-serif; background: #fff; color: #1b1c19; }
+  @media (prefers-color-scheme: dark) { body { background: #121412; color: #ebebe5; } }
+</style>
+</head>
+<body>
+<h1>Programação</h1>
+<!-- Servir a pasta raiz do repositório: python3 -m http.server 8000 e abrir /embed/exemplo.html -->
+<script src="../web/latinoware-catalogo.js" defer></script>
+<latinoware-catalogo src="../web/catalogo.json" api="https://rag.ilove.the.br"></latinoware-catalogo>
+</body>
+</html>

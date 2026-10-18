@@ -56,7 +56,7 @@ def main():
         if a and not 0 <= a["t_inicio"] < duracao[a["video_id"]]:
             sys.exit(f"{indexar.uid(p)}: t_inicio fora do vídeo")
         saida.append({
-            "uid": indexar.uid(p), "id": p["id"], "titulo": " ".join(p["titulo"].split()),
+            "uid": indexar.uid(p), "id": p["id"], "titulo": " ".join(p["titulo"].split()).strip("'\"“”‘’ ."),
             "tipo": p["tipo"], "trilha": p["trilha"], "espaco": p["espaco"],
             "data": p["inicio"][:10], "hora_inicio": p["inicio"][11:16], "hora_fim": p["fim"][11:16],
             "idioma": p.get("idioma", ""), "resumo_curto": resumo_curto(p["resumo"]), "url_site": p["url"],

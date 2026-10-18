@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import re
 from pathlib import Path
 
 RAIZ = Path(__file__).parent.parent
@@ -19,6 +20,12 @@ def test_contagens():
     assert len({p["uid"] for p in palestras}) == 236
     assert len(CATALOGO["palestrantes"]) == 168
     assert sum(p["url_video"] is not None for p in palestras) >= 63
+
+
+def test_versao_do_componente():
+    js = (RAIZ / "web" / "latinoware-catalogo.js").read_text()
+    assert re.search(r"const VERSAO = (\d+);", js)[1] == str(CATALOGO["versao"])
+    assert len(js.encode()) <= 25 * 1024
 
 
 def test_video_coerente():
