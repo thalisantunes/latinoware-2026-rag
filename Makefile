@@ -4,8 +4,9 @@ export
 
 PY = uv run python
 
-.PHONY: tudo weaviate coletar audio transcrever sincronizar indexar catalogo api testar avaliar benchmark fotos fotos-limpar videos-individuais novos-videos metricas
-tudo: weaviate coletar audio transcrever sincronizar indexar catalogo
+.PHONY: tudo weaviate coletar audio transcrever sincronizar indexar catalogo api testar avaliar benchmark fotos fotos-limpar videos-individuais novos-videos metricas gabarito-candidatos
+# catalogo antes de indexar: não depende do índice e fica pronto mesmo se a avaliação da busca falhar
+tudo: weaviate coletar audio transcrever sincronizar catalogo indexar
 
 weaviate:
 	docker compose up -d
@@ -22,8 +23,10 @@ transcrever:
 sincronizar:
 	$(PY) 08_sincronizar_inicio.py
 
+# depois de indexar, a avaliação de busca: falha se o recall cair abaixo de 100%
 indexar:
 	$(PY) 04_indexar.py
+	$(PY) 06_avaliar_busca.py
 
 catalogo:
 	$(PY) 07_exportar_catalogo.py
@@ -33,6 +36,10 @@ api:
 
 avaliar:
 	$(PY) 06_avaliar_busca.py
+
+# sugestões de perguntas do histórico para o gabarito (conferir à mão antes de usar)
+gabarito-candidatos:
+	$(PY) 06_avaliar_busca.py --candidatos
 
 # modelos do Ollama local a comparar; ex.: make benchmark MODELOS="qwen3:14b gemma4:12b-it-qat"
 MODELOS ?= qwen3:14b
@@ -63,7 +70,7 @@ videos-individuais:
 # make novos-videos VIDEOS="9Dck3H7xOGE GSUcnRPFDpE KGIWmBq2t_A" (os ids que ainda não aparecem nas listagens)
 novos-videos:
 	$(PY) 02_baixar_audio.py $(foreach v,$(VIDEOS),"$(v)")
-	$(MAKE) transcrever sincronizar indexar catalogo
+	$(MAKE) transcrever sincronizar catalogo indexar
 
 # linha semanal de uso (anônima) no STATUS.md
 metricas:
