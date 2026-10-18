@@ -30,3 +30,25 @@ def test_casar():
 def test_sobrenome_ajuda_quando_titulo_e_parecido():
     p = PALESTRAS[1]
     assert videos.nota("Inferno no shell - Neves", p) > videos.nota("Inferno no shell - Silva", p)
+
+
+def test_mapear_replica_titulo_e_desempata():
+    palestras = PALESTRAS + [{"id": "4", "espaco": "Espaço Brasil", "titulo": "Do Inferno ao Shell",
+                              "palestrantes": [{"nome": "Julio Cezar Neves"}]}]
+    achados = [({"id": "x", "titulo": "Do inferno ao shell"}, PALESTRAS[1], 1.0),
+               ({"id": "y", "titulo": "Do inferno ao shell (reupload)"}, PALESTRAS[1], 0.9)]
+    mapa, duvidas, _ = videos.mapear(achados, palestras)
+    assert {u: m["video_id"] for u, m in mapa.items()} == {"2@paraguai": "x", "3@peru": "x", "4@brasil": "x"}
+    assert duvidas == []
+
+
+def test_titulo_curto_nao_casa_com_tudo():
+    p = {"titulo": "IA", "palestrantes": []}
+    assert videos.nota("Latinoware 2026 | Uma palestra longa sobre IA e outras coisas", p) < videos.ACEITA
+
+
+def test_empate_nao_grava():
+    achados = [({"id": "x", "titulo": "Do inferno ao shell"}, PALESTRAS[1], 0.9),
+               ({"id": "y", "titulo": "Do inferno ao shell!"}, PALESTRAS[1], 0.9)]
+    mapa, duvidas, _ = videos.mapear(achados, PALESTRAS)
+    assert mapa == {} and len(duvidas) == 1

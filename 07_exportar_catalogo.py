@@ -68,9 +68,8 @@ def main():
             "video_id": a.get("video_id"), "t_inicio": a.get("t_inicio"), "t_fim": a.get("t_fim"),
             "url_video": a.get("url_video"), "alinhamento": a.get("alinhamento"),
             "transcrito": a.get("video_id") in transcritos,
-            "video_palestra": individuais.get(indexar.uid(p), {}).get("video_id"),
-            "url_video_palestra": f"https://youtu.be/{individuais[indexar.uid(p)]['video_id']}"
-            if indexar.uid(p) in individuais else None,
+            "video_palestra": (vp := individuais.get(indexar.uid(p), {}).get("video_id")),
+            "url_video_palestra": f"https://youtu.be/{vp}" if vp else None,
         })
 
     # a grade às vezes aponta para outra URL da mesma pessoa (slug do nome x swge-<hash>)

@@ -237,7 +237,7 @@
           <div class="acoes">${g.individual
             ? `<a class="btn pri" href="${url(g.individual.url_video_palestra)}" target="_blank" rel="noopener" aria-describedby="${id}">▶ ${
               esc(t.assistir)}</a>${v ? `<a href="${url(v.url_video)}" target="_blank" rel="noopener" aria-describedby="${id}">${
-              esc(t.naLive)} (${hms(v.t_inicio)})</a>` : ""}`
+              esc(t.naLive)} (${hms(v.t_inicio)})</a>${v.alinhamento === "estimado" ? `<span class="est">${esc(t.estimado)}</span>` : ""}` : ""}`
             : v
             ? `<a class="btn pri" href="${url(v.url_video)}" target="_blank" rel="noopener" aria-describedby="${id}">▶ ${esc(t.assistir)} (${hms(v.t_inicio)})</a>${
               v.alinhamento === "estimado" ? `<span class="est">${esc(t.estimado)}</span>` : ""}`

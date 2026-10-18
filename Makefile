@@ -53,6 +53,7 @@ fotos:
 fotos-limpar:
 	$(FOTOS) limpar
 
-# vídeos individuais das palestras: ensaio com make videos-individuais PLAYLIST="<url>"; grava com GRAVAR=1
+# vídeos individuais das palestras (uma URL por vez): ensaio com make videos-individuais PLAYLIST="<url>";
+# grava com GRAVAR=1
 videos-individuais:
-	$(PY) 11_videos_palestras.py $(PLAYLIST) $(if $(GRAVAR),--gravar)
+	$(PY) 11_videos_palestras.py "$(PLAYLIST)" $(if $(GRAVAR),--gravar)

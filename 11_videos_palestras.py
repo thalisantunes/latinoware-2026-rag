@@ -1,6 +1,7 @@
 """Etapa 11: liga os vídeos individuais de cada palestra (quando o organizador publicar) às palestras da grade.
 
 Uso: python 11_videos_palestras.py <playlist ou canal> [...]  [--gravar]
+(canal: use a aba, como .../videos ou .../streams; a URL raiz lista abas, não vídeos)
 
 Lista os vídeos com o yt-dlp (só metadados, sem baixar) e casa cada título com uma palestra pelo título
 normalizado e pelos nomes dos palestrantes. Sem --gravar é só ensaio: mostra o mapa, os casos duvidosos e
@@ -36,8 +37,10 @@ def nota(titulo_video, palestra):
     """Semelhança do título (0 a 1) mais um bônus se o sobrenome de um palestrante aparece no título.
     O título do vídeo é comparado inteiro e por partes ("Latinoware 2026 | Título - Palestrante | Espaço")."""
     v, t = norm(titulo_video), norm(palestra["titulo"])
-    partes = [v] + [norm(x) for x in re.split(r"\s[|–-]\s|\|", titulo_video) if norm(x)]
-    base = max(max(SequenceMatcher(None, x, t).ratio() for x in partes), 1.0 if t and t in v else 0)
+    partes = [v] + [norm(x) for x in re.split(r"\s[|–—·:-]\s|\||:", titulo_video) if norm(x)]
+    # título contido no do vídeo só vale como palavra inteira e se for boa parte dele ("IA" não casa com tudo)
+    contido = bool(t) and re.search(rf"\b{re.escape(t)}\b", v) and len(t) >= 0.5 * len(v)
+    base = max(max(SequenceMatcher(None, x, t).ratio() for x in partes), 1.0 if contido else 0)
     sobrenomes = {norm(s["nome"]).split()[-1] for s in palestra["palestrantes"] if norm(s["nome"])}
     return min(1.0, base + 0.15 * any(n in v.split() for n in sobrenomes if len(n) > 3))
 
@@ -54,6 +57,32 @@ def casar(videos, palestras):
     return saida
 
 
+def mapear(achados, palestras):
+    """{uid: vídeo} das notas ≥ ACEITA, para todos os uids com o mesmo título (a keynote em cada sala e dia).
+    Dois vídeos para a mesma palestra: fica a maior nota; empate vai para as dúvidas."""
+    por_titulo = {}
+    for p in palestras:
+        por_titulo.setdefault(norm(p["titulo"]), []).append(indexar.uid(p))
+    melhor, empates, duvidas, sem = {}, set(), [], []
+    for v, p, n in achados:
+        if not p:
+            sem.append(f"  {v['titulo']}")
+        elif n < ACEITA:
+            duvidas.append(f"  {n:.2f}  {v['titulo']}  →  {p['titulo']}")
+        else:
+            chave = norm(p["titulo"])
+            atual = melhor.get(chave)
+            if atual and atual[1] == n:  # sem como escolher: nenhum dos dois é gravado
+                duvidas.append(f"  empate {n:.2f}: {atual[0]['titulo']} / {v['titulo']}  →  {p['titulo']}")
+                empates.add(chave)
+            if not atual or n > atual[1]:
+                melhor[chave] = (v, n)
+                empates.discard(chave)
+    mapa = {u: {"video_id": v["id"], "titulo": v["titulo"], "nota": round(n, 2)}
+            for chave, (v, n) in melhor.items() if chave not in empates for u in por_titulo[chave]}
+    return mapa, duvidas, sem
+
+
 def listar(fonte):
     out = subprocess.run([sys.executable, "-m", "yt_dlp", "--flat-playlist", "--dump-json", fonte],
                          capture_output=True, text=True, check=True).stdout
@@ -66,19 +95,15 @@ def main():
         sys.exit(__doc__)
     palestras = json.loads((indexar.DATA / "site" / "palestras.json").read_text())
     videos = [v for f in fontes for v in listar(f)]
-    mapa, duvidas, sem = {}, [], []
-    for v, p, n in casar(videos, palestras):
-        if p and n >= ACEITA:
-            mapa[indexar.uid(p)] = {"video_id": v["id"], "titulo": v["titulo"], "nota": round(n, 2)}
-        elif p:
-            duvidas.append(f"  {n:.2f}  {v['titulo']}  →  {p['titulo']}")
-        else:
-            sem.append(f"  {v['titulo']}")
+    mapa, duvidas, sem = mapear(casar(videos, palestras), palestras)
     print(f"{len(videos)} vídeos: {len(mapa)} casados, {len(duvidas)} duvidosos, {len(sem)} sem palestra")
     print("duvidosos:", *duvidas, sep="\n") if duvidas else None
     print("sem palestra:", *sem, sep="\n") if sem else None
     if "--gravar" in sys.argv:
-        (indexar.DATA / "videos_palestras.json").write_text(json.dumps(mapa, ensure_ascii=False, indent=1))
+        arq = indexar.DATA / "videos_palestras.json"
+        # o que já está no arquivo (inclusive correção à mão) vence; a rodada nova só preenche o que falta
+        mapa |= json.loads(arq.read_text()) if arq.exists() else {}
+        arq.write_text(json.dumps(mapa, ensure_ascii=False, indent=1))
         print("data/videos_palestras.json gravado; rode make catalogo")
     else:
         print("ensaio: nada gravado (use --gravar)")
