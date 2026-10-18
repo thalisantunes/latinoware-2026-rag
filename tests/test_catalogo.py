@@ -32,6 +32,7 @@ def test_video_coerente():
     duracao = {v["id"]: v["duracao_s"] for v in CATALOGO["videos"]}
     for p in CATALOGO["palestras"]:
         assert (p["url_video"] is None) == (p["video_id"] is None)
+        assert (p["url_video_palestra"] is None) == (p["video_palestra"] is None)
         if p["video_id"]:
             assert 0 <= p["t_inicio"] < duracao[p["video_id"]]
             assert p["url_video"] == f"https://youtu.be/{p['video_id']}?t={p['t_inicio']}"
