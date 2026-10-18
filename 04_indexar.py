@@ -30,7 +30,7 @@ DATA = RAIZ / "data"
 OLLAMA = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
 EMBED_MODEL = os.environ.get("EMBED_MODEL", "bge-m3")
 PALAVRAS, SOBREPOSICAO = 350, 60
-MIN_FALA = 100  # palavras transcritas na janela para a palestra contar como gravada
+MIN_FALA = 10  # palavras transcritas por minuto da janela para a palestra contar como gravada
 IDIOMA = {"Português": "pt", "Inglês": "en", "Espanhol": "es"}
 BRT = timezone(timedelta(hours=-3))
 
@@ -92,7 +92,7 @@ def live_do_espaco(v, palestras, videos, manual):
 def alinhar_palestras(palestras, videos, manual):
     """{uid: video_id, t_inicio, t_fim, alinhamento, url_video} das palestras que caem dentro de uma live.
 
-    Com transcrição, exige MIN_FALA palavras na janela: keynotes da grade repetem em todas as salas,
+    Com transcrição, exige MIN_FALA palavras por minuto na janela: keynotes da grade repetem em todas as salas,
     mas só algumas lives transmitiram o áudio; nas outras o trecho é silêncio ou música.
     """
     alinhadas = {}
@@ -108,7 +108,8 @@ def alinhar_palestras(palestras, videos, manual):
             ini, fim = max(ini, 0), min(fim, v["duracao"])  # começou antes da live: vale a parte gravada
             anterior = alinhadas.get(uid(p))
             # duas lives no mesmo espaço e dia: fica a que gravou mais da palestra
-            fala = segs is None or sum(len(s["texto"].split()) for s in segs if ini <= s["inicio"] < fim) >= MIN_FALA
+            palavras = sum(len(s["texto"].split()) for s in segs if ini <= s["inicio"] < fim) if segs else 0
+            fala = segs is None or palavras >= MIN_FALA * (fim - ini) / 60
             if fala and fim > ini and (not anterior or fim - ini > anterior["t_fim"] - anterior["t_inicio"]):
                 alinhadas[uid(p)] = {"video_id": v["id"], "t_inicio": ini, "t_fim": fim,
                                      "alinhamento": fonte, "url_video": url_video(v["id"], ini)}

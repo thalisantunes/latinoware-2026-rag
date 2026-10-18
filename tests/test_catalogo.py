@@ -18,7 +18,7 @@ def test_contagens():
     assert len(palestras) == 236
     assert len({p["uid"] for p in palestras}) == 236
     assert len(CATALOGO["palestrantes"]) == 168
-    assert sum(p["url_video"] is not None for p in palestras) >= 64
+    assert sum(p["url_video"] is not None for p in palestras) >= 63
 
 
 def test_video_coerente():
@@ -35,7 +35,15 @@ def test_sem_texto_longo():
         assert len(p["resumo_curto"]) <= exportar.RESUMO_MAX
         assert p["url_site"].startswith("https://latinoware.org/")
         assert all(s["url"].startswith("https://") for s in p["palestrantes"])
-    assert all("bio" not in s for s in CATALOGO["palestrantes"])
+    chaves = {"id", "nome", "url", "organizacao", "pais", "palestras"}
+    assert all(set(s) == chaves for s in CATALOGO["palestrantes"])
+
+
+def test_palestrante_ligado():
+    urls = {s["url"] for s in CATALOGO["palestrantes"]}
+    # 3 pessoas da grade não têm página de palestrante no site
+    assert len({s["url"] for p in CATALOGO["palestras"] for s in p["palestrantes"]} - urls) <= 3
+    assert exportar.nome_curto("Alessandro de Oliveira Faria (Cabelo)") == ("alessandro", "faria")
 
 
 def test_resumo_curto():

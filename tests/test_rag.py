@@ -1,6 +1,7 @@
 """Testes. Unitários rodam sempre; os de integração precisam da API no ar (make api)."""
 
 import importlib.util
+import json
 import os
 import re
 from collections import Counter
@@ -78,6 +79,19 @@ def test_alinhar_palestras():
     videos.append({"id": "curta", "espaco": "Espaço Brasil", "data": "2026-10-14", "duracao": 1200,
                    "inicio_live": 1791979200 + 6000})
     assert indexar.alinhar_palestras(palestras, videos, {})["dentro@brasil"]["video_id"] == "abc"
+
+
+def test_alinhar_exige_fala(tmp_path, monkeypatch):
+    # live com transcrição: só a palestra com fala na janela fica alinhada
+    monkeypatch.setattr(indexar, "DATA", tmp_path)
+    (tmp_path / "transcricoes").mkdir()
+    fala = [{"inicio": 3600 + i * 10, "texto": "palavra " * 20} for i in range(300)]  # 10:00-10:50
+    (tmp_path / "transcricoes" / "abc.json").write_text(json.dumps({"segmentos": fala}))
+    palestras = [{"id": p, "espaco": "Espaço Brasil", "inicio": f"2026-10-14T{h}:00:00-03:00",
+                  "fim": f"2026-10-14T{h}:50:00-03:00"} for p, h in (("falada", "10"), ("muda", "11"))]
+    videos = [{"id": "abc", "espaco": "Espaço Brasil", "data": "2026-10-14", "duracao": 4 * 3600,
+               "inicio_live": 1791979200}]
+    assert list(indexar.alinhar_palestras(palestras, videos, {})) == ["falada@brasil"]
 
 
 def api_no_ar():

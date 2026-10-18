@@ -9,6 +9,7 @@ import importlib.util
 import json
 import re
 import sys
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -28,6 +29,12 @@ def resumo_curto(texto):
     return texto[:RESUMO_MAX - 1].rsplit(" ", 1)[0].rstrip(".,;:") + "…"
 
 
+def nome_curto(nome):
+    """'Cesar Augusto de Azambuja Brod' e 'Cesar Brod' viram ('cesar', 'brod')."""
+    s = unicodedata.normalize("NFD", re.sub(r"\(.*?\)", "", nome)).encode("ascii", "ignore").decode().lower().split()
+    return (s[0], s[-1]) if s else ()
+
+
 def main():
     data = indexar.DATA
     palestras = json.loads((data / "site" / "palestras.json").read_text())
@@ -39,6 +46,9 @@ def main():
     alinhadas = indexar.alinhar_palestras(palestras, videos, manual)
     duracao = {v["id"]: v["duracao"] for v in videos}
     transcritos = {v["id"] for v in videos if (data / "transcricoes" / f"{v['id']}.json").exists()}
+    if len(transcritos) < len(videos):
+        # sem transcrição não dá para saber se a live transmitiu o áudio de cada palestra
+        print(f"aviso: {len(videos) - len(transcritos)} lives sem transcrição; keynotes podem apontar para sala sem áudio")
 
     saida = []
     for p in sorted(palestras, key=lambda p: (p["inicio"], p["espaco"], p["titulo"])):
@@ -56,9 +66,14 @@ def main():
             "transcrito": a.get("video_id") in transcritos,
         })
 
+    # a grade às vezes aponta para outra URL da mesma pessoa (slug do nome x swge-<hash>)
+    por_nome = {nome_curto(s["nome"]): s["url"] for s in pessoas}
+    urls = {s["url"] for s in pessoas}
     uids_de = {}
     for p in saida:
         for s in p["palestrantes"]:
+            if s["url"] not in urls:
+                s["url"] = por_nome.get(nome_curto(s["nome"]), s["url"])
             uids_de.setdefault(s["url"], []).append(p["uid"])
     catalogo = {
         "versao": VERSAO,
