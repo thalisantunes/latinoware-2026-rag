@@ -30,6 +30,7 @@ DATA = RAIZ / "data"
 OLLAMA = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
 EMBED_MODEL = os.environ.get("EMBED_MODEL", "bge-m3")
 PALAVRAS, SOBREPOSICAO = 350, 60
+MIN_FALA = 100  # palavras transcritas na janela para a palestra contar como gravada
 IDIOMA = {"Português": "pt", "Inglês": "en", "Espanhol": "es"}
 BRT = timezone(timedelta(hours=-3))
 
@@ -89,19 +90,26 @@ def live_do_espaco(v, palestras, videos, manual):
 
 
 def alinhar_palestras(palestras, videos, manual):
-    """{uid: video_id, t_inicio, t_fim, alinhamento, url_video} das palestras que caem dentro de uma live."""
+    """{uid: video_id, t_inicio, t_fim, alinhamento, url_video} das palestras que caem dentro de uma live.
+
+    Com transcrição, exige MIN_FALA palavras na janela: keynotes da grade repetem em todas as salas,
+    mas só algumas lives transmitiram o áudio; nas outras o trecho é silêncio ou música.
+    """
     alinhadas = {}
     for v in videos:
         do_dia, t0, fonte = live_do_espaco(v, palestras, videos, manual)
         if not t0 or not v.get("duracao"):
             continue
+        arq = DATA / "transcricoes" / f"{v['id']}.json"
+        segs = json.loads(arq.read_text())["segmentos"] if arq.exists() else None
         for p in do_dia:
             ini = int((datetime.fromisoformat(p["inicio"]) - t0).total_seconds())
             fim = int((datetime.fromisoformat(p["fim"]) - t0).total_seconds())
             ini, fim = max(ini, 0), min(fim, v["duracao"])  # começou antes da live: vale a parte gravada
             anterior = alinhadas.get(uid(p))
             # duas lives no mesmo espaço e dia: fica a que gravou mais da palestra
-            if fim > ini and (not anterior or fim - ini > anterior["t_fim"] - anterior["t_inicio"]):
+            fala = segs is None or sum(len(s["texto"].split()) for s in segs if ini <= s["inicio"] < fim) >= MIN_FALA
+            if fala and fim > ini and (not anterior or fim - ini > anterior["t_fim"] - anterior["t_inicio"]):
                 alinhadas[uid(p)] = {"video_id": v["id"], "t_inicio": ini, "t_fim": fim,
                                      "alinhamento": fonte, "url_video": url_video(v["id"], ini)}
     return alinhadas
