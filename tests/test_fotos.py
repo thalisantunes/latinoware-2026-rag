@@ -66,12 +66,15 @@ def test_pasta_e_feed(tmp_path, monkeypatch):
     album = "https://www.flickr.com/photos/itaipuparquetec/albums/72177720300000001"
     originais = tmp_path / "originais"
     originais.mkdir()
-    for nome in ("LW26-001.jpg", "LW26-002.JPG", "leia-me.txt"):
+    (originais / "dia2").mkdir()
+    for nome in ("LW26-001.jpg", "LW26-002.JPG", "LW26-002.png", "leia-me.txt", "dia2/LW26-003.jpg"):
         (originais / nome).write_bytes(b"x")
     (tmp_path / "albuns.json").write_text(json.dumps({"72177720300000001": {"autor": "Itaipu Parquetec", "licenca": "4"}}))
     fotos.pasta(originais, album)
     registradas = json.loads((tmp_path / "flickr.json").read_text())
-    assert sorted(registradas) == ["72177720300000001:LW26-001", "72177720300000001:LW26-002"]
+    # subpasta entra no id; o .png com o mesmo nome do .JPG fica de fora (com aviso)
+    assert sorted(registradas) == ["72177720300000001:LW26-001", "72177720300000001:LW26-002",
+                                   "72177720300000001:dia2/LW26-003"]
 
     class Resposta:
         def __init__(self, texto="", dados=None):
@@ -84,7 +87,7 @@ def test_pasta_e_feed(tmp_path, monkeypatch):
             return self.dados
 
     feed = {"items": [
-        {"title": "LW26-001", "link": "https://www.flickr.com/photos/itaipuparquetec/555/in/set-72177720300000001/",
+        {"title": "LW26-001.jpg", "link": "https://www.flickr.com/photos/itaipuparquetec/555/in/set-72177720300000001/",
          "media": {"m": "https://live.staticflickr.com/65535/555_abc_m.jpg"}},
         {"title": "LW26-099", "link": "https://www.flickr.com/photos/itaipuparquetec/999/", "media": {"m": "x_m.jpg"}}]}
 
@@ -99,7 +102,7 @@ def test_pasta_e_feed(tmp_path, monkeypatch):
             pass
 
         def get(self, url, params=None):
-            return Resposta(dados=feed) if params else Resposta('"nsid":"199299022@N06"')
+            return Resposta(json.dumps(feed)) if params else Resposta('"nsid":"199299022@N06"')
 
     monkeypatch.setattr(fotos.httpx, "Client", Cliente)
     fotos.feed(album)

@@ -46,7 +46,7 @@ testar:
 FOTOS = uv run --extra fotos --extra rerank python 10_fotos.py
 fotos:
 	$(FOTOS) referencias
-	$(if $(PASTA),$(FOTOS) pasta "$(PASTA)" "$(ALBUM)")
+	$(if $(PASTA),$(if $(ALBUM),$(FOTOS) pasta "$(PASTA)" "$(ALBUM)",$(error PASTA precisa de ALBUM=<url do álbum>)))
 	$(if $(ALBUM),$(FOTOS) feed "$(ALBUM)")
 	$(FOTOS) casar
 

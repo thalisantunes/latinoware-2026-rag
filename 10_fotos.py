@@ -84,7 +84,10 @@ def referencias():
 
 
 def id_album(url):
-    return re.search(r"albums/(\d{10,})", url)[1]
+    m = re.search(r"/(?:albums|sets)/(\d{10,})", url or "")
+    if not m:
+        sys.exit(f"URL de álbum do Flickr inválida: {url!r} (esperado .../albums/<id>)")
+    return m[1]
 
 
 def pasta(diretorio, album):
@@ -96,13 +99,19 @@ def pasta(diretorio, album):
         sys.exit(f"falta o álbum {aid} em data/fotos/albuns.json (autor e licença para o crédito)")
     arq = FOTOS / "flickr.json"
     fotos = json.loads(arq.read_text()) if arq.exists() else {}
-    antes = len(fotos)
+    antes, vistos = len(fotos), {}
     for f in sorted(Path(diretorio).rglob("*")):
-        if f.suffix.lower() in IMAGENS:
-            fid = f"{aid}:{f.stem}"
-            fotos.setdefault(fid, {"id": fid, "titulo": f.stem, "arquivo": str(f.resolve()), "album": aid,
-                                   "autor": albuns[aid]["autor"], "licenca": albuns[aid]["licenca"],
-                                   "url_pagina": album, "url_thumb": None})
+        if f.suffix.lower() not in IMAGENS:
+            continue
+        rel = f.relative_to(diretorio).with_suffix("").as_posix()  # subpastas entram no id
+        fid = f"{aid}:{rel}"
+        if fid in vistos:  # mesmo nome com extensão diferente: ficaria uma só
+            print(f"aviso: {f} e {vistos[fid]} têm o mesmo nome; renomeie um deles")
+            continue
+        vistos[fid] = f
+        entrada = fotos.setdefault(fid, {"id": fid, "titulo": f.stem, "album": aid, "autor": albuns[aid]["autor"],
+                                         "licenca": albuns[aid]["licenca"], "url_pagina": album, "url_thumb": None})
+        entrada["arquivo"] = str(f.resolve())  # pasta movida: o caminho novo vale, o link do Flickr fica
     arq.write_text(json.dumps(fotos, ensure_ascii=False, indent=1))
     print(f"pasta: {len(fotos) - antes} fotos novas registradas, {len(fotos)} no total")
 
@@ -112,20 +121,33 @@ def feed(album):
     título (= nome do arquivo) e lista as fotos do Flickr que ainda não estão na pasta."""
     aid = id_album(album)
     with httpx.Client(timeout=60, follow_redirects=True, headers={"User-Agent": "latinoware-2026-rag"}) as cli:
-        nsid = re.search(r'"nsid":"(\d+@N\d+)"', cli.get(album).text)[1]
+        m = re.search(r'"nsid":"(\d+@N\d+)"', cli.get(album).text)
+        if not m:
+            sys.exit(f"não achei o dono do álbum na página {album}")
+        nsid = m[1]
         r = cli.get("https://www.flickr.com/services/feeds/photoset.gne",
                     params={"set": aid, "nsid": nsid, "format": "json", "nojsoncallback": 1})
         r.raise_for_status()
     arq = FOTOS / "flickr.json"
     fotos = json.loads(arq.read_text()) if arq.exists() else {}
+    por_titulo = {}
+    for f in fotos.values():
+        if "titulo" in f:
+            por_titulo.setdefault((f["album"], f["titulo"]), []).append(f)
     ligadas, novas = 0, []
-    for item in r.json()["items"]:
-        local = fotos.get(f"{aid}:{item['title']}")
-        if not local:
-            novas.append(item["title"])
+    # o feed do Flickr escapa apóstrofo como \' (JSON inválido)
+    for item in json.loads(r.text.replace("\\'", "'"))["items"]:
+        titulo = Path(item["title"]).stem if Path(item["title"]).suffix.lower() in IMAGENS else item["title"]
+        locais = por_titulo.get((aid, titulo), [])
+        if not locais:
+            novas.append(titulo)
             continue
+        if len(locais) > 1:  # mesmo nome em subpastas: não dá para saber qual é
+            print(f"aviso: {len(locais)} fotos locais chamadas {titulo}; nenhuma ligada")
+            continue
+        local = locais[0]
         if local["url_thumb"] is None:
-            local["url_pagina"] = item["link"].split("/in/")[0] + "/"
+            local["url_pagina"] = item["link"].split("/in/")[0].rstrip("/") + "/"
             local["url_thumb"] = item["media"]["m"].replace("_m.", "_q.")  # miniatura quadrada 150 px
             ligadas += 1
     arq.write_text(json.dumps(fotos, ensure_ascii=False, indent=1))
@@ -177,7 +199,10 @@ def casar():
             vet_refs[pid] = max(faces, key=lambda f: f[1])[0] if faces else None
     guardar("referencias", vet_refs)
     vet_fotos = carregar("flickr")
-    novas = [fid for fid in fotos if fid not in vet_fotos]  # incremental: só fotos ainda não vistas
+    sem_arquivo = [fid for fid, f in fotos.items() if not f.get("arquivo")]
+    if sem_arquivo:
+        print(f"aviso: {len(sem_arquivo)} fotos sem arquivo local (rode `pasta`); ficam de fora")
+    novas = [fid for fid, f in fotos.items() if fid not in vet_fotos and f.get("arquivo")]  # só fotos não vistas
     try:
         for i, fid in enumerate(novas, 1):
             try:
