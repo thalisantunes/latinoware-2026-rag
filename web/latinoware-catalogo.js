@@ -5,6 +5,7 @@
 // Sem dependências e sem build. Projeto pessoal e não oficial: github.com/thalisantunes/latinoware-2026-rag
 (() => {
   const VERSAO = 1; // igual à "versao" de catalogo.json
+  const P = "lw_"; // prefixo dos filtros na URL, para não colidir com a página que hospeda
 
   const T = {
     pt: {
@@ -64,7 +65,7 @@
     .linha { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; margin: 12px 0; }
     .check { display: flex; align-items: center; gap: 8px; min-height: 44px; font-size: .95rem; color: inherit; }
     .check input { width: 20px; height: 20px; accent-color: var(--a); }
-    button, .btn { font: 600 .9rem/1.2 inherit; font-family: inherit; border-radius: 999px; padding: 10px 14px; min-height: 44px;
+    button, .btn { font-family: inherit; font-weight: 600; font-size: .9rem; line-height: 1.2; border-radius: 999px; padding: 10px 14px; min-height: 44px;
       cursor: pointer; display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
     .sec { border: 1px solid var(--l); background: transparent; color: inherit; }
     .pri { border: 0; background: var(--a); color: var(--af); }
@@ -89,8 +90,10 @@
     @media (prefers-reduced-motion: no-preference) { article { transition: border-color .15s; } }
   `;
 
-  const norm = s => (s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  const norm = s => (s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
+  // só http(s): o catálogo pode vir de outro site e as fontes, da API
+  const url = u => /^https?:\/\//i.test(u || "") ? esc(u) : "#";
   const hms = s => {
     const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, ss = String(s % 60).padStart(2, "0");
     return h ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
@@ -101,12 +104,12 @@
     static observedAttributes = ["lang", "src"];
 
     connectedCallback() {
-      if (this.shadowRoot) return;
+      this.aoHash ||= () => this.irPara(location.hash);
+      addEventListener("hashchange", this.aoHash);
+      if (this.shadowRoot) return; // reinserido na página: já montado
       this.attachShadow({ mode: "open" });
       this.idioma = this.lerIdioma();
       this.carregar();
-      this.aoHash = () => this.irPara(location.hash);
-      addEventListener("hashchange", this.aoHash);
     }
 
     disconnectedCallback() { removeEventListener("hashchange", this.aoHash); }
@@ -126,11 +129,14 @@
     get t() { return T[this.idioma]; }
 
     async carregar() {
+      const vez = this.vez = (this.vez || 0) + 1; // src trocado no meio do fetch: vale o último
       this.shadowRoot.innerHTML = `<style>${CSS}</style><p class="msg" role="status">${esc(this.t.carregando)}</p>`;
       try {
         const r = await fetch(new URL(this.getAttribute("src") || "catalogo.json", document.baseURI));
         if (!r.ok) throw new Error(r.status);
-        this.dados = await r.json();
+        const dados = await r.json();
+        if (vez !== this.vez) return;
+        this.dados = dados;
         if (this.dados.versao !== VERSAO) console.warn(`latinoware-catalogo: catálogo versão ${this.dados.versao}, componente ${VERSAO}`);
         this.grupos = this.agrupar(this.dados.palestras);
         this.montar();
@@ -144,7 +150,7 @@
     agrupar(palestras) {
       const grupos = new Map();
       for (const p of palestras) {
-        const k = `${norm(p.titulo).replace(/\W/g, "")}|${p.data}|${p.hora_inicio}`;
+        const k = `${norm(p.titulo).replace(/[^\p{L}\p{N}]/gu, "")}|${p.data}|${p.hora_inicio}`;
         const g = grupos.get(k) || grupos.set(k, { ...p, espacos: [], uids: [], video: null }).get(k);
         g.espacos.push(p.espaco);
         g.uids.push(p.uid);
@@ -167,7 +173,7 @@
       const salas = [...new Set(this.grupos.flatMap(g => g.salas))].sort((a, b) => a.localeCompare(b));
       const trilhas = [...new Set(this.grupos.map(g => g.trilha))].sort((a, b) => a.localeCompare(b));
       const pessoas = new Map();
-      for (const g of this.grupos) for (const s of g.palestrantes) pessoas.set(s.url, s.nome);
+      for (const g of this.grupos) for (const s of g.palestrantes) pessoas.set(s.url || s.nome, s.nome);
       const nomes = [...pessoas].sort((a, b) => a[1].localeCompare(b[1]));
       const perguntar = api || this.hasAttribute("perguntar");
 
@@ -189,17 +195,17 @@
         if (g.data !== atual) {
           if (atual) html += "</ul></section>";
           atual = g.data;
-          html += `<section data-dia="${g.data}"><h2>${esc(dia(g.data))}</h2><ul class="lista">`;
+          html += `<section data-dia="${esc(g.data)}"><h2>${esc(dia(g.data))}</h2><ul class="lista">`;
         }
         const v = g.video, id = `t${i++}`;
-        const pes = g.palestrantes.map(s => s.url ? `<a href="${esc(s.url)}">${esc(s.nome)}</a>` : esc(s.nome)).join(", ");
+        const pes = g.palestrantes.map(s => s.url ? `<a href="${url(s.url)}">${esc(s.nome)}</a>` : esc(s.nome)).join(", ");
         html += `<li data-i="${i - 1}"><article id="palestra-${esc(g.uids[0])}" tabindex="-1" aria-labelledby="${id}">
           <h3 id="${id}">${esc(g.titulo)}</h3>${pes ? `<p class="pes">${pes}</p>` : ""}
-          <p class="meta"><span>${esc(g.salas.join(" · "))}</span><span>${esc(fmtCurto.format(new Date(`${g.data}T12:00:00Z`)))}, ${g.hora_inicio}–${g.hora_fim}</span>
+          <p class="meta"><span>${esc(g.salas.join(" · "))}</span><span>${esc(fmtCurto.format(new Date(`${g.data}T12:00:00Z`)))}, ${esc(g.hora_inicio)}–${esc(g.hora_fim)}</span>
           <span class="chip">${esc(g.trilha)}</span></p>
-          <p class="resumo">${esc(g.resumo_curto)} <a href="${esc(g.url_site)}">${esc(t.noSite)}</a></p>
+          <p class="resumo">${esc(g.resumo_curto)} <a href="${url(g.url_site)}">${esc(t.noSite)}</a></p>
           <div class="acoes">${v
-            ? `<a class="btn pri" href="${esc(v.url_video)}" target="_blank" rel="noopener" aria-describedby="${id}">▶ ${esc(t.assistir)} (${hms(v.t_inicio)})</a>${
+            ? `<a class="btn pri" href="${url(v.url_video)}" target="_blank" rel="noopener" aria-describedby="${id}">▶ ${esc(t.assistir)} (${hms(v.t_inicio)})</a>${
               v.alinhamento === "estimado" ? `<span class="est">${esc(t.estimado)}</span>` : ""}`
             : `<span class="sem">${esc(t.semGravacao)}</span>`}${
             perguntar ? `<button type="button" class="sec perg" aria-describedby="${id}">${esc(t.perguntarIA)}</button>` : ""}</div>
@@ -213,15 +219,18 @@
 
       const q = new URLSearchParams(location.search);
       for (const [n, c] of Object.entries(this.campos)) {
-        if (c.type === "checkbox") c.checked = q.get(n) === "1"; else if (q.has(n)) c.value = q.get(n);
+        if (c.type === "checkbox") c.checked = q.get(P + n) === "1"; else if (q.has(P + n)) c.value = q.get(P + n);
       }
       raiz.querySelector(".filtros").addEventListener("input", () => this.filtrar(true));
       this.campos.video.addEventListener("change", () => this.filtrar(true));
       raiz.querySelector(".limpar").addEventListener("click", () => this.limpar());
-      raiz.addEventListener("click", e => {
-        const b = e.target.closest(".perg");
-        if (b) this.perguntar(this.grupos[b.closest("li").dataset.i]);
-      });
+      if (!this.cliques) { // o shadowRoot sobrevive a montar(): um listener só
+        this.cliques = e => {
+          const b = e.target.closest(".perg");
+          if (b) this.perguntar(this.grupos[b.closest("li").dataset.i]);
+        };
+        raiz.addEventListener("click", this.cliques);
+      }
       if (api) raiz.querySelector(".ia").addEventListener("submit", e => { e.preventDefault(); this.enviar(); });
       this.filtrar(false);
       this.irPara(location.hash);
@@ -234,7 +243,7 @@
         const g = this.grupos[li.dataset.i];
         const ok = busca.every(p => g.texto.includes(p)) && (!c.data.value || g.data === c.data.value)
           && (!c.espaco.value || g.salas.includes(c.espaco.value)) && (!c.trilha.value || g.trilha === c.trilha.value)
-          && (!c.palestrante.value || g.palestrantes.some(s => s.url === c.palestrante.value)) && (!c.video.checked || !!g.video);
+          && (!c.palestrante.value || g.palestrantes.some(s => (s.url || s.nome) === c.palestrante.value)) && (!c.video.checked || !!g.video);
         li.hidden = !ok;
         n += ok;
       });
@@ -245,10 +254,12 @@
       const q = new URLSearchParams(location.search);
       for (const [nome, campo] of Object.entries(c)) {
         const v = campo.type === "checkbox" ? (campo.checked ? "1" : "") : campo.value.trim();
-        v ? q.set(nome, v) : q.delete(nome);
+        v ? q.set(P + nome, v) : q.delete(P + nome);
       }
       const qs = q.toString();
-      history.replaceState(history.state, "", `${location.pathname}${qs ? `?${qs}` : ""}${location.hash}`);
+      try { // o Safari limita replaceState a ~100 chamadas em 30 s
+        history.replaceState(history.state, "", `${location.pathname}${qs ? `?${qs}` : ""}${location.hash}`);
+      } catch { /* o filtro vale, só não fica na URL */ }
     }
 
     limpar() {
@@ -259,10 +270,12 @@
     // a âncora #palestra-<uid> não atravessa o shadow DOM: rolar e focar à mão
     irPara(hash) {
       if (!hash.startsWith("#palestra-") || !this.cards) return;
-      const uid = decodeURIComponent(hash.slice(10));
+      let uid = hash.slice(10);
+      try { uid = decodeURIComponent(uid); } catch { /* hash malformado: usa cru */ }
       const li = this.cards.find(li => this.grupos[li.dataset.i].uids.includes(uid));
       if (!li) return;
-      if (li.hidden) this.limpar();
+      li.hidden = li.closest("section").hidden = false; // mostra o card sem apagar os filtros
+      this.shadowRoot.querySelector(".cont").textContent = this.t.contador(this.cards.filter(c => !c.hidden).length);
       const art = li.querySelector("article");
       art.scrollIntoView({ block: "start" });
       art.focus({ preventScroll: true });
@@ -293,8 +306,8 @@
         const d = await r.json();
         out.innerHTML = `<p class="resp" lang="${esc(d.idioma)}">${esc(d.resposta)}</p><h2>${esc(t.fontes)}</h2><ol>${
           d.fontes.map(s => {
-            const link = s.url_video ? `<a href="${esc(s.url_video)}" target="_blank" rel="noopener">▶ ${esc(t.video)} ${hms(s.video_t)}</a>`
-              : `<a href="${esc(s.url)}">${esc(new URL(s.url).hostname)}</a>`;
+            const link = s.url_video ? `<a href="${url(s.url_video)}" target="_blank" rel="noopener">▶ ${esc(t.video)} ${hms(+s.video_t || 0)}</a>`
+              : `<a href="${url(s.url)}">${esc(/^https?:\/\/([^/]+)/i.exec(s.url || "")?.[1] || s.url)}</a>`;
             return `<li>${esc(s.titulo)}${s.palestrantes ? ` (${esc(s.palestrantes)})` : ""} · ${link}</li>`;
           }).join("")}</ol>`;
       } catch (e) {
