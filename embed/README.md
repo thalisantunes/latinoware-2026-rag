@@ -5,7 +5,7 @@
 ## English
 
 A web component that shows the Latinoware schedule with search, filters and a link to the exact moment of each
-talk in the recorded livestream. No build step, no dependencies, about 25 KB. Personal and **unofficial**
+talk in the recorded livestream. No build step, no dependencies, about 35 KB. Personal and **unofficial**
 project, not affiliated with the Latinoware organizers.
 
 ### Use
@@ -26,6 +26,7 @@ jsDelivr also serves a minified copy if you replace `.js` with `.min.js`.
 | `api` | no | RAG API URL (e.g. `https://rag.ilove.the.br`). Adds an "Ask about the talks" box and the "AI summary" button on each card. Without it, the component is a plain catalogue |
 | `fotos` | no | URL of `fotos.json`: "Photos at the event" gallery in each speaker's view (Flickr thumbnail, credit, removal contact) |
 | `perguntar` | no | shows "AI summary" and fires the `perguntar` event (bubbles, composed, cancelable; `detail.pergunta`, `palestra_id`, `uid`, `titulo`, `palestrantes`) for the host page; with `api`, calling `preventDefault()` turns off the built-in answer box |
+| `ouvir` | no | on by default; `ouvir="false"` removes "Listen" from the answers. Reads the answer aloud with the browser's own voice (Web Speech API, no external service), without the `[n]` markers, in the answer language, with pause/resume/stop and speed 0.8–1.5; never autoplays, and the button is absent if the browser has no speech synthesis |
 
 The API runs on a home GPU with no uptime guarantee; when it is down, the component says so and hides the AI
 buttons, and the catalogue keeps working. Leave `api` out if the page must not depend on it.
@@ -52,7 +53,7 @@ the website, and the link to the moment in the livestream.
 ## Español
 
 Un componente web que muestra la programación de Latinoware con búsqueda, filtros y un enlace al momento exacto
-de cada charla en la transmisión grabada. Sin compilación ni dependencias, unos 25 KB. Proyecto personal y
+de cada charla en la transmisión grabada. Sin compilación ni dependencias, unos 35 KB. Proyecto personal y
 **no oficial**, sin relación con la organización de Latinoware.
 
 ### Uso
@@ -73,6 +74,7 @@ jsDelivr también sirve una copia minificada si cambias `.js` por `.min.js`.
 | `api` | no | URL de la API de la RAG (p. ej. `https://rag.ilove.the.br`). Agrega una caja de preguntas y el botón "Resumen con IA" en cada tarjeta. Sin él, el componente es solo un catálogo |
 | `fotos` | no | URL de `fotos.json`: galería "Fotos en el evento" en la vista de cada ponente (miniatura de Flickr, crédito, contacto para retirar) |
 | `perguntar` | no | muestra "Resumen con IA" y dispara el evento `perguntar` (bubbles, composed, cancelable; `detail.pergunta`, `palestra_id`, `uid`, `titulo`, `palestrantes`) para la página; con `api`, `preventDefault()` desactiva la caja de respuesta propia |
+| `ouvir` | no | activado por defecto; `ouvir="false"` quita "Escuchar" de las respuestas. Lee la respuesta en voz alta con la voz del navegador (Web Speech API, sin servicio externo), sin las marcas `[n]`, en el idioma de la respuesta, con pausar/continuar/detener y velocidad 0,8–1,5; nunca empieza solo, y el botón no aparece si el navegador no tiene síntesis de voz |
 
 La API corre en una GPU doméstica, sin garantía de disponibilidad; cuando cae, el componente lo avisa y oculta
 los botones de IA, y el catálogo sigue funcionando. Omite `api` si la página no puede depender de ella. Los filtros quedan en la URL con el prefijo `lw_` (`lw_data`, `lw_espaco`, `lw_busca`…) y
@@ -98,7 +100,7 @@ sitio y el enlace al momento en la transmisión.
 ## Português
 
 Um componente web que mostra a programação da Latinoware com busca, filtros e link para o instante de cada
-palestra na live gravada. Sem build nem dependências, cerca de 25 KB. Projeto pessoal e **não oficial**, sem
+palestra na live gravada. Sem build nem dependências, cerca de 35 KB. Projeto pessoal e **não oficial**, sem
 vínculo com a organização da Latinoware.
 
 ### Uso
@@ -119,6 +121,7 @@ O jsDelivr também serve uma cópia minificada trocando `.js` por `.min.js`.
 | `api` | não | URL da API da RAG (ex.: `https://rag.ilove.the.br`). Acrescenta uma caixa de perguntas e o botão "Resumo com IA" em cada card. Sem ele, o componente é só catálogo |
 | `fotos` | não | URL do `fotos.json`: galeria "Fotos no evento" na visão de cada palestrante (miniatura do Flickr, crédito, contato para remoção) |
 | `perguntar` | não | mostra "Resumo com IA" e dispara o evento `perguntar` (bubbles, composed, cancelável; `detail.pergunta`, `palestra_id`, `uid`, `titulo`, `palestrantes`) para a página; com `api`, `preventDefault()` desliga a caixa de resposta própria |
+| `ouvir` | não | ligado por padrão; `ouvir="false"` tira o "Ouvir" das respostas. Lê a resposta em voz alta com a voz do próprio navegador (Web Speech API, sem serviço externo), sem as marcações `[n]`, na língua da resposta, com pausar/continuar/parar e velocidade 0,8–1,5; nunca começa sozinho, e o botão não aparece se o navegador não tiver síntese de voz |
 
 A API roda numa GPU doméstica, sem garantia de disponibilidade; quando ela cai, o componente avisa e esconde os
 botões de IA, e o catálogo continua funcionando. Deixe `api` de fora se a página não puder depender dela. Os filtros ficam na URL com prefixo `lw_` (`lw_data`, `lw_espaco`, `lw_busca`…) e

@@ -1,4 +1,4 @@
-// <latinoware-catalogo src lang api fotos perguntar>: catálogo de palestras da Latinoware com filtros e link
+// <latinoware-catalogo src lang api fotos perguntar ouvir>: catálogo de palestras da Latinoware com filtros e link
 // para o instante na live. Atributos e uso: embed/README.md. Sem dependências nem build. Projeto pessoal e
 // não oficial: github.com/thalisantunes/latinoware-2026-rag
 (() => {
@@ -20,6 +20,7 @@
       copiar: "Copiar resposta", compartilhar: "Compartilhar", paginaSite: "Página no site da Latinoware", fotosEvento: "Fotos no evento", foto: "Foto",
       fotoDe: n => `${n} na Latinoware`, noFlickr: "Foto no Flickr", remover: "Quer remover uma foto? Escreva para",
       copiado: "Resposta copiada.", linkCopiado: "Link copiado.", naoCopiou: "Não foi possível copiar.",
+      ouvirResposta: "Ouvir resposta", ouvirResumo: "Ouvir resumo", pausar: "Pausar", continuar: "Continuar", parar: "Parar", velocidade: "Velocidade",
     },
     en: {
       busca: "Search", buscaPh: "title, speaker, topic…", data: "Day", espaco: "Room", trilha: "Track",
@@ -35,6 +36,7 @@
       copiar: "Copy answer", compartilhar: "Share", paginaSite: "Page on the Latinoware website", fotosEvento: "Photos at the event", foto: "Photo",
       fotoDe: n => `${n} at Latinoware`, noFlickr: "Photo on Flickr", remover: "Want a photo removed? Write to",
       copiado: "Answer copied.", linkCopiado: "Link copied.", naoCopiou: "Could not copy.",
+      ouvirResposta: "Listen", ouvirResumo: "Listen to summary", pausar: "Pause", continuar: "Resume", parar: "Stop", velocidade: "Speed",
     },
     es: {
       busca: "Buscar", buscaPh: "título, ponente, tema…", data: "Día", espaco: "Espacio", trilha: "Temática",
@@ -50,6 +52,7 @@
       copiar: "Copiar respuesta", compartilhar: "Compartir", paginaSite: "Página en el sitio de Latinoware", fotosEvento: "Fotos en el evento", foto: "Foto",
       fotoDe: n => `${n} en Latinoware`, noFlickr: "Foto en Flickr", remover: "¿Quieres quitar una foto? Escribe a",
       copiado: "Respuesta copiada.", linkCopiado: "Enlace copiado.", naoCopiou: "No se pudo copiar.",
+      ouvirResposta: "Escuchar", ouvirResumo: "Escuchar resumen", pausar: "Pausar", continuar: "Continuar", parar: "Detener", velocidade: "Velocidad",
     },
   };
 
@@ -118,7 +121,12 @@
     }
     @container (min-width: 1500px) { ul.lista { grid-template-columns: repeat(3, 1fr); } }
     .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-    @media (prefers-reduced-motion: no-preference) { article { transition: border-color .15s; } }
+    .ouvir:not([hidden]), .ouvir > span:not([hidden]) { display: contents; }
+    .ouvir label { display: inline-flex; align-items: center; gap: 6px; }
+    .ouvir select { width: auto; }
+    @keyframes lw-som { 50% { opacity: .3; } }
+    @media (prefers-reduced-motion: no-preference) { article { transition: border-color .15s; }
+      .ouvir [aria-pressed=true] > span { animation: lw-som 1.2s ease-in-out infinite; } }
   `;
 
   const norm = s => (s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -130,6 +138,87 @@
     return h ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
   };
   const sala = e => e.replace(/\s+[–-]\s+.*$/, ""); // "Espaço Haiti – LatinScience" -> "Espaço Haiti"
+
+  // leitura em voz alta com a voz do navegador (Web Speech API, sem serviço externo); sem suporte, sem botão.
+  // Frases curtas em fila: o Chrome corta uma fala longa no meio, e a velocidade nova vale a partir da frase atual.
+  const VOZ = !!globalThis.speechSynthesis && typeof globalThis.SpeechSynthesisUtterance === "function";
+  const LANG = { pt: "pt-BR", en: "en", es: "es" };
+  let calar = () => {}; // uma leitura por vez na página
+  if (VOZ) addEventListener("pagehide", () => calar()); // a volta pelo histórico (bfcache) reencontra a interface parada
+
+  function leitor(texto, idioma, resumo) {
+    const l = Object.hasOwn(T, idioma) ? idioma : "pt", t = T[l];
+    // sem lookbehind (Safari < 16.4 rejeitaria o arquivo inteiro); token sem espaço maior que 200 vira pedaços de 200
+    const pedacos = String(texto).replace(/\s*\[\d+(?:\s*[,;]\s*\d+)*\]/g, "").split("\n")
+      .flatMap(linha => linha.match(/\S.*?(?:[.!?…](?=\s|$)|$)/g) || [])
+      .flatMap(f => f.match(/\S.{0,199}(?=\s|$)|\S{200}/g) || []);
+    if (!VOZ || !pedacos.length) return null;
+    const caixa = document.createElement("span");
+    caixa.className = "ouvir";
+    caixa.innerHTML = `<button type="button" aria-pressed="false"><span aria-hidden="true">🔊</span> ${esc(resumo ? t.ouvirResumo : t.ouvirResposta)}</button><span hidden>
+      <button type="button"></button><button type="button">${esc(t.parar)}</button><label>${esc(t.velocidade)}<select>${
+      [0.8, 1, 1.25, 1.5].map(v => `<option value="${v}"${v === 1 ? " selected" : ""}>${v.toLocaleString(l)}×</option>`).join("")}</select></label></span>`;
+    const [bOuvir, ctl] = caixa.children, [bPausa, bParar, rotulo] = ctl.children, sel = rotulo.querySelector("select");
+    const focado = el => el.contains(caixa.getRootNode().activeElement);
+    let i = 0, vez = 0, pausado = false, atual = null, espera;
+    const estado = lendo => {
+      if (!lendo && focado(ctl)) bOuvir.focus(); // os controles vão sumir: o foco não cai no body
+      bOuvir.setAttribute("aria-pressed", lendo);
+      ctl.hidden = !lendo;
+      bPausa.textContent = pausado ? t.continuar : t.pausar;
+    };
+    const parar = () => { vez++; pausado = false; atual = null; clearTimeout(espera); speechSynthesis.cancel(); estado(false); };
+    const semVoz = () => { // o navegador tem a API mas não fala: o botão some
+      parar();
+      if (focado(caixa)) caixa.nextElementSibling?.focus();
+      caixa.hidden = true;
+    };
+    const falar = () => {
+      const minha = ++vez; // as falas canceladas terminam depois, sem mexer na fila
+      speechSynthesis.cancel();
+      speechSynthesis.resume(); // o Chrome fica pausado depois de cancel() numa fala pausada
+      const vozes = speechSynthesis.getVoices();
+      const voz = vozes.find(v => v.lang.replace("_", "-").toLowerCase() === LANG[l].toLowerCase()) || vozes.find(v => v.lang.toLowerCase().startsWith(l));
+      const fala = j => {
+        if (minha !== vez) return;
+        if (j >= pedacos.length || !caixa.isConnected) return parar(); // fim, ou a resposta saiu da página
+        i = j;
+        if (pausado) return; // plataforma que encerra a fala ao pausar (Chrome no Android): "Continuar" segue daqui
+        const u = atual = new SpeechSynthesisUtterance(pedacos[j]); // referência guardada: sem ela o Chrome perde o onend
+        u.lang = LANG[l];
+        if (voz) u.voice = voz;
+        u.rate = +sel.value;
+        u.onstart = () => clearTimeout(espera);
+        u.onend = () => { clearTimeout(espera); fala(j + 1); };
+        u.onerror = e => {
+          if (minha !== vez) return;
+          /^(synthesis|language|voice)-unavailable$/.test(e.error) ? semVoz() : parar(); // interrompida por fora: para, sem travar
+        };
+        clearTimeout(espera);
+        espera = setTimeout(() => { if (minha === vez && !pausado) semVoz(); }, 8000); // nunca começou: sem voz no sistema
+        speechSynthesis.speak(u);
+      };
+      fala(i);
+    };
+    bOuvir.onclick = () => {
+      if (bOuvir.getAttribute("aria-pressed") === "true") return parar();
+      calar();
+      calar = parar;
+      i = 0;
+      estado(true);
+      falar();
+    };
+    bPausa.onclick = () => {
+      pausado = !pausado;
+      if (pausado) speechSynthesis.pause();
+      else if (speechSynthesis.paused) speechSynthesis.resume();
+      else falar(); // a fala já tinha sido encerrada: recomeça do trecho atual
+      estado(true);
+    };
+    bParar.onclick = () => { parar(); bOuvir.focus(); };
+    sel.onchange = () => { if (!ctl.hidden && !pausado) falar(); }; // pausado: a velocidade vale ao continuar
+    return caixa;
+  }
 
   class LatinowareCatalogo extends HTMLElement {
     static observedAttributes = ["lang", "src"];
@@ -399,6 +488,7 @@
       const pergunta = f.q.value.trim();
       if (pergunta.length < 3 || this.ocupado) return;
       this.ocupado = true;
+      calar();
       out.innerHTML = `<p class="msg">${esc(t.aguarde)}</p><p class="resp"></p><div class="fts"></div>`;
       const resp = out.querySelector(".resp"), fts = out.querySelector(".fts");
       let dadosFontes = [];
@@ -444,6 +534,8 @@
         resp.textContent = d.resposta;
         this.partilha(out, pergunta, d.resposta, `${t.fontes}:\n${dadosFontes.map(s =>
           `[${s.n}] ${s.titulo}${s.palestrantes ? ` (${s.palestrantes})` : ""} ${s.url_video || s.url}`).join("\n")}`);
+        const voz = this.getAttribute("ouvir") !== "false" && leitor(d.resposta, d.idioma || this.idioma, !!palestra_id);
+        if (voz) out.querySelector(".acoes").prepend(voz);
       } catch (e) {
         // sem resposta do servidor (TypeError do fetch): a API está fora, não é erro da pergunta
         const msg = e.name === "TimeoutError" ? t.demorou : e.message === "fora" ? t.fora : e.message === "ocupado" ? t.ocupado : t.erro;
@@ -455,5 +547,7 @@
 
   }
 
+  LatinowareCatalogo.leitor = leitor; // a página do RAG usa o mesmo leitor na resposta dela
+  LatinowareCatalogo.calar = () => calar();
   if (!customElements.get("latinoware-catalogo")) customElements.define("latinoware-catalogo", LatinowareCatalogo);
 })();

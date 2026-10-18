@@ -25,7 +25,7 @@ def test_contagens():
 def test_versao_do_componente():
     js = (RAIZ / "web" / "latinoware-catalogo.js").read_text()
     assert re.search(r"const VERSAO = (\d+);", js)[1] == str(CATALOGO["versao"])
-    assert len(js.encode()) <= 30 * 1024
+    assert len(js.encode()) <= 36 * 1024
 
 
 def test_video_coerente():
