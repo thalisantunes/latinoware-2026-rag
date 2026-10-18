@@ -302,3 +302,6 @@ def test_gabarito_extra(tmp_path, monkeypatch):
     assert avaliar.gabarito() == avaliar.GABARITO  # sem arquivo, só o fixo
     (tmp_path / "gabarito_extra.json").write_text(json.dumps([["Quem falou de KiCad?", "Embarcados"]]))
     assert avaliar.gabarito()[-1] == ("Quem falou de KiCad?", "Embarcados")
+    (tmp_path / "gabarito_extra.json").write_text(json.dumps([["Pergunta sem título esperado", ""]]))
+    with pytest.raises(SystemExit):  # esperado vazio casaria com tudo
+        avaliar.gabarito()

@@ -5,7 +5,8 @@ export
 PY = uv run python
 
 .PHONY: tudo weaviate coletar audio transcrever sincronizar indexar catalogo api testar avaliar benchmark fotos fotos-limpar videos-individuais novos-videos metricas gabarito-candidatos
-tudo: weaviate coletar audio transcrever sincronizar indexar catalogo
+# catalogo antes de indexar: não depende do índice e fica pronto mesmo se a avaliação da busca falhar
+tudo: weaviate coletar audio transcrever sincronizar catalogo indexar
 
 weaviate:
 	docker compose up -d
@@ -69,7 +70,7 @@ videos-individuais:
 # make novos-videos VIDEOS="9Dck3H7xOGE GSUcnRPFDpE KGIWmBq2t_A" (os ids que ainda não aparecem nas listagens)
 novos-videos:
 	$(PY) 02_baixar_audio.py $(foreach v,$(VIDEOS),"$(v)")
-	$(MAKE) transcrever sincronizar indexar catalogo
+	$(MAKE) transcrever sincronizar catalogo indexar
 
 # linha semanal de uso (anônima) no STATUS.md
 metricas:

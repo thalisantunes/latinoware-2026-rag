@@ -33,7 +33,7 @@ question ──05──> bge-m3 embedding ──> hybrid search on Trecho ──
 | 3 | `03_transcrever.py` | faster-whisper `large-v3-turbo` on the GPU, VAD, language detected per segment (lives mix pt/es/en). |
 | 4 | `04_indexar.py` | Splits each live by talk using the schedule, builds ~350-word chunks with 60-word overlap, bge-m3 embeddings, loads into Weaviate. |
 | 5 | `05_api.py` | FastAPI `POST /ask` and the `web/index.html` page. |
-| 6 | `06_avaliar_busca.py` | Search recall on 10 reference questions in pt/en/es. |
+| 6 | `06_avaliar_busca.py` | Search recall on the reference questions (10 fixed in pt/en/es + checked extras); fails below 100%. |
 
 Design decisions:
 
@@ -90,7 +90,7 @@ make transcrever  # estimate: 2 to 4 h for 122 h of audio [not measured]
 make indexar      # ~1 min without transcripts; a few minutes with them
 make api          # http://localhost:8765 (page + API)
 make avaliar      # recall@8 on the reference questions; fails below 100% (also runs after make indexar)
-make gabarito-candidatos  # suggestions from the history; add only the checked ones to data/gabarito_extra.json
+make gabarito-candidatos  # suggestions from the history; add only the checked ones to data/gabarito_extra.json, then delete the candidates file
 make testar       # tests; integration tests need the API running
 ```
 
@@ -235,7 +235,7 @@ pregunta ──05──> embedding bge-m3 ──> búsqueda híbrida en Trecho �
 | 3 | `03_transcrever.py` | faster-whisper `large-v3-turbo` en la GPU, VAD, idioma detectado por segmento (las lives mezclan pt/es/en). |
 | 4 | `04_indexar.py` | Corta cada live por charla según la programación, genera fragmentos de ~350 palabras con solapamiento de 60, embeddings bge-m3 y los carga en Weaviate. |
 | 5 | `05_api.py` | API FastAPI `POST /ask` y la página `web/index.html`. |
-| 6 | `06_avaliar_busca.py` | Recall de la búsqueda con 10 preguntas de referencia en pt/en/es. |
+| 6 | `06_avaliar_busca.py` | Recall de la búsqueda con las preguntas de referencia (10 fijas en pt/en/es + extras revisadas); falla por debajo de 100%. |
 
 Decisiones:
 
@@ -294,7 +294,7 @@ make transcrever  # estimación: 2 a 4 h para 122 h de audio [no medido]
 make indexar      # ~1 min sin transcripciones; unos minutos con ellas
 make api          # http://localhost:8765 (página + API)
 make avaliar      # recall@8 de las preguntas de referencia; falla por debajo de 100% (también tras make indexar)
-make gabarito-candidatos  # sugerencias del historial; solo las revisadas van a data/gabarito_extra.json
+make gabarito-candidatos  # sugerencias del historial; solo las revisadas van a data/gabarito_extra.json; después, borre el archivo de candidatos
 make testar       # pruebas; las de integración necesitan la API activa
 ```
 
@@ -440,7 +440,7 @@ pergunta ──05──> embedding bge-m3 ──> busca híbrida em Trecho ─�
 | 3 | `03_transcrever.py` | faster-whisper `large-v3-turbo` na GPU, VAD, idioma detectado por segmento (as lives misturam pt/es/en). |
 | 4 | `04_indexar.py` | Corta cada live por palestra usando a grade, gera pedaços de ~350 palavras com sobreposição de 60, embeddings bge-m3 e carrega no Weaviate. |
 | 5 | `05_api.py` | API FastAPI `POST /ask` e a página `web/index.html`. |
-| 6 | `06_avaliar_busca.py` | Recall da busca com 10 perguntas-gabarito em pt/en/es. |
+| 6 | `06_avaliar_busca.py` | Recall da busca com as perguntas-gabarito (10 fixas em pt/en/es + extras conferidas); falha abaixo de 100%. |
 
 Decisões:
 
@@ -497,7 +497,7 @@ make transcrever  # estimativa: 2 a 4 h para as 122 h de áudio [não medido]
 make indexar      # ~1 min sem transcrições; alguns minutos com
 make api          # http://localhost:8765 (página + API)
 make avaliar      # recall@8 das perguntas-gabarito; falha abaixo de 100% (roda também no make indexar)
-make gabarito-candidatos  # sugestões do histórico; só as conferidas vão para data/gabarito_extra.json
+make gabarito-candidatos  # sugestões do histórico; só as conferidas vão para data/gabarito_extra.json; depois, apague o arquivo de candidatos
 make testar       # testes; os de integração precisam da API no ar
 ```
 

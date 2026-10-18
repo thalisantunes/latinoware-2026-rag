@@ -1,4 +1,4 @@
-"""Etapa 6: recall da busca híbrida com 10 perguntas-gabarito (sem LLM).
+"""Etapa 6: recall da busca híbrida com as perguntas-gabarito (sem LLM).
 
 Cada pergunta parafraseia uma palestra (sem copiar o título) em pt, en ou es; conta acerto
 se algum dos K primeiros trechos for da palestra esperada (comparando pelo título).
@@ -43,26 +43,40 @@ GABARITO = [
 
 def gabarito():
     extra = indexar.DATA / "gabarito_extra.json"
-    return GABARITO + [tuple(p) for p in json.loads(extra.read_text())] if extra.exists() else GABARITO
+    if not extra.exists():
+        return GABARITO
+    try:
+        pares = json.loads(extra.read_text())
+    except ValueError as e:
+        sys.exit(f"{extra}: JSON inválido ({e})")
+    # esperado vazio casaria com qualquer título e daria um acerto falso
+    if not all(isinstance(p, list) and len(p) == 2 and all(isinstance(x, str) for x in p)
+               and p[0].strip() and len(p[1].strip()) >= 4 for p in pares):
+        sys.exit(f"{extra}: cada item deve ser [pergunta, trecho do título esperado com 4+ caracteres]")
+    return GABARITO + [tuple(p) for p in pares]
 
 
 def candidatos():
     """Sugestões para o gabarito (conferir antes de copiar para data/gabarito_extra.json)."""
-    from weaviate.classes.query import Filter
+    from weaviate.classes.query import Filter, Sort
     ja = {p for p, _ in gabarito()}
     with indexar.conectar() as cli:
-        res = cli.collections.get("Pergunta").query.fetch_objects(limit=200, filters=(
+        if not cli.collections.exists("Pergunta"):
+            sys.exit("ainda não há histórico de perguntas (a API cria a coleção Pergunta ao subir)")
+        res = cli.collections.get("Pergunta").query.fetch_objects(
+            limit=200, sort=Sort.by_property("reutilizacoes", ascending=False), filters=(
             Filter.by_property("palestra_id").equal(api.SEM_PALESTRA)
             & Filter.by_property("reutilizacoes").greater_or_equal(1)))
     pares = []
     for o in res.objects:
         # 1ª fonte que é palestra (a bio junta os títulos de todas as palestras da pessoa)
-        palestras = [f for f in json.loads(o.properties["fontes"]) if f["fonte"] != "bio" and f.get("palestra_id")]
+        palestras = [f for f in json.loads(o.properties["fontes"]) if f.get("fonte") != "bio" and f.get("palestra_id")]
         if o.properties["pergunta"] not in ja and palestras:
             pares.append([o.properties["pergunta"], palestras[0]["titulo"]])
     arq = indexar.DATA / "gabarito_candidatos.json"
     arq.write_text(json.dumps(pares, ensure_ascii=False, indent=1))
-    print(f"{len(pares)} candidatos em {arq}: confira cada um e copie os bons para data/gabarito_extra.json")
+    print(f"{len(pares)} candidatos em {arq}: confira cada um, copie os bons para data/gabarito_extra.json e apague "
+          "o arquivo (tem texto de visitante; o histórico só guarda 90 dias)")
 
 
 def main():
@@ -77,7 +91,9 @@ def main():
             pos = next((i for i, t in enumerate(titulos, 1) if esperado.lower() in t.lower()), None)
             acertos += pos is not None
             print(f"{'OK ' if pos else 'ERR'} pos={pos} | {pergunta}")
-    print(f"recall@{K} (alpha={api.ALPHA}): {acertos}/{len(perguntas)}")
+    # o ranking muda com o reranker: deixa claro com qual a avaliação rodou (sem o extra, ele cai em silêncio)
+    reranker = (api.RERANK_LOCAL if api._reranker else "falhou ao carregar") if api.RERANK_LOCAL else api.RERANK_URL or "nenhum"
+    print(f"recall@{K} (alpha={api.ALPHA}, reranker: {reranker}): {acertos}/{len(perguntas)}")
     sys.exit(0 if acertos == len(perguntas) else 1)  # make indexar falha se a busca piorou
 
 
