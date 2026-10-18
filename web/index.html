@@ -115,6 +115,9 @@
   .partilha { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
   .partilha button { border: 1px solid var(--line-ui); background: var(--surface); color: var(--fg); font: 600 .9rem/1 var(--sans);
     padding: 10px 16px; border-radius: 999px; cursor: pointer; min-height: 44px; }
+  .reaproveitada { color: var(--muted); font-size: .9rem; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
+  .reaproveitada button { border: 1px solid var(--line-ui); background: var(--surface); color: var(--fg); font: 600 .85rem/1 var(--sans);
+    padding: 8px 14px; border-radius: 999px; cursor: pointer; min-height: 44px; }
   .ir { display: inline-block; margin-top: 16px; font-size: .95rem; }
   section.bloco { margin-top: 48px; scroll-margin-top: 16px; }
   section.bloco > h2 { font-size: 1.3rem; letter-spacing: 0; text-transform: none; color: var(--fg); margin: 0 0 16px; font-weight: 700; }
@@ -152,6 +155,8 @@
     </form>
     <span class="dica exemplos-rotulo" id="lex"></span>
     <ul class="exemplos" id="exemplos" aria-labelledby="lex"></ul>
+    <div id="faq" hidden><span class="dica exemplos-rotulo" id="lfaq"></span>
+      <ul class="exemplos" id="frequentes" aria-labelledby="lfaq"></ul></div>
     <a class="ir" href="#catalogo" id="ir"></a>
     <p class="sr" id="anuncio" role="status"></p>
     <section id="saida" tabindex="-1"></section>
@@ -163,6 +168,7 @@
       <h2 id="hsobre"></h2>
       <p id="sobretxt"></p>
       <p id="privtxt"></p>
+      <p id="privperg"></p>
     </section>
   </main>
 
@@ -180,7 +186,11 @@
       sub: "Palestras e palestrantes do congresso de software livre em Foz do Iguaçu, 14 a 16 de outubro de 2026. Responde em português, inglês ou espanhol.",
       lq: "Sua pergunta", ph: "Ex.: Quem falou sobre Home Assistant?", dica: "Ctrl/⌘+Enter para enviar",
       enviar: "Perguntar", enviando: "Procurando…", lex: "Exemplos:", langs: "Idioma da interface e da resposta",
-      etapa: { buscando: () => "Buscando nos trechos das palestras (Weaviate, banco vetorial livre)…",
+      lfaq: "Perguntas frequentes:", reaproveitada: (d) => `Resposta reaproveitada de uma pergunta igual feita em ${d}.`,
+      gerarNovo: "Gerar de novo",
+      privPerg: ["As perguntas ficam guardadas sem IP nem identificação por 90 dias, para reaproveitar respostas e melhorar o projeto. Detalhes em ", "Privacidade", "."],
+      etapa: { reaproveitando: () => "Reaproveitando a resposta de uma pergunta igual…",
+        buscando: () => "Buscando nos trechos das palestras (Weaviate, banco vetorial livre)…",
         reordenando: () => "Reordenando os trechos mais relevantes…",
         escrevendo: (m) => `Escrevendo a resposta com um modelo de linguagem livre${m ? ` (${m})` : ""}…` },
       fontes: "Fontes", fonte: "Fonte", pronto: "Resposta pronta.",
@@ -206,7 +216,11 @@
       sub: "Talks and speakers of the free software conference in Foz do Iguaçu, Brazil, October 14–16, 2026. Answers in English, Spanish or Portuguese.",
       lq: "Your question", ph: "E.g.: Who talked about Home Assistant?", dica: "Ctrl/⌘+Enter to send",
       enviar: "Ask", enviando: "Searching…", lex: "Examples:", langs: "Interface and answer language",
-      etapa: { buscando: () => "Searching the talk excerpts (Weaviate, an open-source vector database)…",
+      lfaq: "Frequent questions:", reaproveitada: (d) => `Answer reused from an identical question asked on ${d}.`,
+      gerarNovo: "Generate again",
+      privPerg: ["Questions are stored without IP or any identification for 90 days, to reuse answers and improve the project. Details at ", "Privacy", "."],
+      etapa: { reaproveitando: () => "Reusing the answer to an identical question…",
+        buscando: () => "Searching the talk excerpts (Weaviate, an open-source vector database)…",
         reordenando: () => "Reranking the most relevant excerpts…",
         escrevendo: (m) => `Writing the answer with an open language model${m ? ` (${m})` : ""}…` },
       fontes: "Sources", fonte: "Source", pronto: "Answer ready.",
@@ -232,7 +246,11 @@
       sub: "Charlas y ponentes del congreso de software libre en Foz do Iguaçu, Brasil, del 14 al 16 de octubre de 2026. Responde en español, inglés o portugués.",
       lq: "Tu pregunta", ph: "Ej.: ¿Quién habló de Home Assistant?", dica: "Ctrl/⌘+Enter para enviar",
       enviar: "Preguntar", enviando: "Buscando…", lex: "Ejemplos:", langs: "Idioma de la interfaz y de la respuesta",
-      etapa: { buscando: () => "Buscando en los fragmentos de las charlas (Weaviate, base de datos vectorial libre)…",
+      lfaq: "Preguntas frecuentes:", reaproveitada: (d) => `Respuesta reutilizada de una pregunta igual hecha el ${d}.`,
+      gerarNovo: "Generar de nuevo",
+      privPerg: ["Las preguntas se guardan sin IP ni identificación durante 90 días, para reutilizar respuestas y mejorar el proyecto. Detalles en ", "Privacidad", "."],
+      etapa: { reaproveitando: () => "Reutilizando la respuesta de una pregunta igual…",
+        buscando: () => "Buscando en los fragmentos de las charlas (Weaviate, base de datos vectorial libre)…",
         reordenando: () => "Reordenando los fragmentos más relevantes…",
         escrevendo: (m) => `Escribiendo la respuesta con un modelo de lenguaje libre${m ? ` (${m})` : ""}…` },
       fontes: "Fuentes", fonte: "Fuente", pronto: "Respuesta lista.",
@@ -277,6 +295,10 @@
     for (const k of ["h1", "sub", "lq", "dica", "lex", "aviso", "dados", "repo", "ir", "hcat", "hsobre"]) $(k).textContent = t[k];
     const [a, duda, b, wv, c] = t.sobre;
     $("sobretxt").replaceChildren(a, link(duda, "https://github.com/dudanogueira"), b, link(wv, "https://weaviate.io"), c);
+    const [q1, qpag, q2] = t.privPerg;
+    $("privperg").replaceChildren(q1, link(qpag, "https://ilove.the.br/privacidade/"), q2);
+    $("lfaq").textContent = t.lfaq;
+    frequentes();
     const [p1, email, p2, pagina, p3] = t.priv;
     $("privtxt").replaceChildren(p1, el("a", { href: `mailto:${email}`, textContent: email }), p2,
       link(pagina, "https://ilove.the.br/privacidade/"), p3);
@@ -409,7 +431,19 @@
     return [el("h2", { textContent: t.fontes }), el("ul", { className: "fontes" }, ...agrupar(fontes).map((g) => palestra(g, t)))];
   }
 
-  async function perguntar(pergunta, palestraId) {
+  // perguntas feitas mais de uma vez (a API só devolve essas), na língua da interface
+  function frequentes() {
+    const lingua_ = lingua();
+    fetch(`${API_URL}/frequentes?idioma=${lingua_}`, { signal: AbortSignal.timeout(10000) }).then((r) => r.ok ? r.json() : [])
+      .then((lista) => {
+        if (lingua_ !== lingua()) return;  // trocou de língua no meio
+        $("frequentes").replaceChildren(...lista.map((f) => el("li", {}, el("button", {
+          type: "button", textContent: f.pergunta, onclick: () => { if (ocupado) return; $("q").value = f.pergunta; perguntar(f.pergunta); } }))));
+        $("faq").hidden = !lista.length;
+      }).catch(() => { $("faq").hidden = true; });
+  }
+
+  async function perguntar(pergunta, palestraId, novo) {
     if (ocupado) return;
     if (pergunta.length < 3) { $("q").focus(); return; }
     const t = ui();
@@ -432,6 +466,7 @@
     const corpo = { pergunta };
     if (escolha !== "auto") corpo.idioma = escolha;
     if (palestraId) corpo.palestra_id = palestraId;  // "Resumo com IA": só os trechos dessa palestra
+    if (novo) corpo.novo = true;  // "Gerar de novo": ignora a resposta guardada
     const pedir = (rota) => fetch(API_URL + rota, { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify(corpo), signal: AbortSignal.timeout(90000) });
     try {
@@ -466,7 +501,11 @@
       await catalogo;
       const tl = tem(d.idioma) ? T[d.idioma] : t;
       mostrar(tl.pronto, el("div", { lang: tl.html },
-        comCitacoes(d.resposta, new Set(fontes.map((f) => f.n)), tl), partilha(pergunta, d, fontes, tl), ...listaFontes(fontes, tl)));
+        comCitacoes(d.resposta, new Set(fontes.map((f) => f.n)), tl),
+        ...(d.reaproveitada ? [el("p", { className: "reaproveitada" },
+          tl.reaproveitada(new Date(d.criado_em).toLocaleDateString(tl.html)),
+          el("button", { type: "button", textContent: tl.gerarNovo, onclick: () => perguntar(pergunta, palestraId, true) }))] : []),
+        partilha(pergunta, d, fontes, tl), ...listaFontes(fontes, tl)));
       $("saida").focus();
     } catch (err) {
       if (status === 404) { mostrar(t.vazio, el("div", { className: "estado vazio", textContent: t.vazio })); return; }  // palestra sem trechos

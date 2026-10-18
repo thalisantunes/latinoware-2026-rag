@@ -131,7 +131,8 @@ def test_idioma_forcado():
 @pytest.mark.skipif(not api_no_ar(), reason="API fora do ar")
 def test_ask_stream():
     eventos = []
-    with httpx.stream("POST", f"{API_URL}/ask/stream", json={"pergunta": PERGUNTAS["pt"]}, timeout=300) as r:
+    # novo: o stream testado é o da geração, não o da resposta guardada no histórico
+    with httpx.stream("POST", f"{API_URL}/ask/stream", json={"pergunta": PERGUNTAS["pt"], "novo": True}, timeout=300) as r:
         assert r.headers["content-type"].startswith("text/event-stream")
         for linha in r.iter_lines():
             if linha.startswith("event: "):
@@ -220,3 +221,40 @@ def test_reordenar(monkeypatch):
 
     monkeypatch.setattr(api.httpx, "post", falha)
     assert api.reordenar("q", trechos) == trechos  # sem reranker, segue a ordem da busca
+
+
+@pytest.mark.skipif(not api_no_ar(), reason="API fora do ar")
+def test_cache_de_perguntas():
+    import time
+    pergunta = "Quais palestras falaram de energia elétrica?"
+    primeira = httpx.post(f"{API_URL}/ask", json={"pergunta": pergunta, "novo": True}, timeout=300).json()
+    assert primeira["reaproveitada"] is False
+    inicio = time.time()
+    # só muda pontuação e caixa: é a mesma pergunta
+    segunda = httpx.post(f"{API_URL}/ask", json={"pergunta": "quais palestras falaram de energia elétrica"}, timeout=300).json()
+    assert segunda["reaproveitada"] is True and time.time() - inicio < 3
+    assert segunda["resposta"] == primeira["resposta"]
+    # parecida, mas outra pergunta: não recebe a resposta da primeira (pode reaproveitar a própria, de outra rodada)
+    outra = httpx.post(f"{API_URL}/ask", json={"pergunta": "Quais palestras falaram de energia solar?"}, timeout=300).json()
+    assert outra["resposta"] != primeira["resposta"]
+    frequentes = httpx.get(f"{API_URL}/frequentes", params={"idioma": "pt"}).json()
+    assert isinstance(frequentes, list) and all(f["vezes"] >= 2 for f in frequentes)
+
+
+@pytest.mark.skipif(not api_no_ar(), reason="API fora do ar")
+def test_expurgo_de_perguntas_antigas():
+    from datetime import datetime, timedelta, timezone
+    with indexar.conectar() as cli:
+        col = cli.collections.get("Pergunta")
+        props = {"pergunta": "teste do expurgo", "idioma": "pt", "resposta": "x", "fontes": "[]", "modelo": "teste",
+                 "palestra_id": "-", "versao_indice": "teste", "reutilizacoes": 0}
+        velha = col.data.insert(vector=[0.0] * 1024, properties=props | {
+            "criado_em": datetime.now(timezone.utc) - timedelta(days=api.RETENCAO_DIAS + 1)})
+        nova = col.data.insert(vector=[0.0] * 1024, properties=props | {"criado_em": datetime.now(timezone.utc)})
+        api.app.state.wv = cli
+        try:
+            api.expurgar()
+            assert col.query.fetch_object_by_id(velha) is None
+            assert col.query.fetch_object_by_id(nova) is not None
+        finally:
+            col.data.delete_by_id(nova)

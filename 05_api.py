@@ -21,7 +21,7 @@ from pathlib import Path
 import httpx
 import uvicorn
 import weaviate
-from weaviate.classes.config import Configure, DataType, Property
+from weaviate.classes.config import Configure, DataType, Property, Tokenization
 from weaviate.classes.query import Filter, MetadataQuery, Sort
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -50,6 +50,7 @@ _reranker, _trava_reranker = None, threading.Lock()  # _reranker = False: a carg
 # medidas ficaram acima de 0,09) e apaga o que tiver mais de RETENCAO_DIAS
 CACHE_DIST = float(os.environ.get("CACHE_DIST", 0.05))
 RETENCAO_DIAS = int(os.environ.get("RETENCAO_DIAS", 90))
+SEM_PALESTRA = "-"  # pergunta geral (não é "Resumo com IA" de uma palestra)
 VERSAO_INDICE = ((Path(__file__).parent / "data" / "versao_indice.txt").read_text().strip()
                  if (Path(__file__).parent / "data" / "versao_indice.txt").exists() else "0")
 CORS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "https://ilove.the.br,https://www.ilove.the.br,https://rede-cidades.pages.dev,https://latinoware.org,https://www.latinoware.org,http://localhost:8765").split(",")]
@@ -311,11 +312,14 @@ async def ask(q: Pergunta):
 def preparar_historico(wv):
     if wv.collections.exists("Pergunta"):
         return
-    texto = lambda n, busca=True: Property(name=n, data_type=DataType.TEXT,  # noqa: E731
-                                           index_searchable=busca, index_filterable=True)
+    texto = lambda n: Property(name=n, data_type=DataType.TEXT)  # noqa: E731
+    # campos de filtro com igualdade exata (tokenização "field"); a de palavras recusa valores curtos
+    chave = lambda n: Property(name=n, data_type=DataType.TEXT, tokenization=Tokenization.FIELD,  # noqa: E731
+                               index_searchable=False)
     wv.collections.create("Pergunta", vector_config=Configure.Vectors.self_provided(), properties=[
-        texto("pergunta"), texto("idioma", False), texto("resposta"), texto("fontes", False), texto("modelo", False),
-        texto("palestra_id", False), texto("versao_indice", False),
+        texto("pergunta"), chave("idioma"), texto("resposta"),
+        Property(name="fontes", data_type=DataType.TEXT, index_searchable=False, index_filterable=False),
+        chave("modelo"), chave("palestra_id"), chave("versao_indice"),
         Property(name="criado_em", data_type=DataType.DATE), Property(name="reutilizacoes", data_type=DataType.INT)])
 
 
@@ -339,7 +343,7 @@ def filtro_igual(q, idioma):
     """Só reaproveita no mesmo idioma, modelo, índice e palestra (resumo de uma palestra é outra pergunta)."""
     return (Filter.by_property("idioma").equal(idioma) & Filter.by_property("modelo").equal(LLM_MODEL)
             & Filter.by_property("versao_indice").equal(VERSAO_INDICE)
-            & Filter.by_property("palestra_id").equal(q.palestra_id or ""))
+            & Filter.by_property("palestra_id").equal(q.palestra_id or SEM_PALESTRA))
 
 
 def do_historico(q, idioma, vetor):
@@ -355,11 +359,18 @@ def do_historico(q, idioma, vetor):
 
 
 def guardar(q, idioma, vetor, resposta, fontes):
-    if resposta and fontes:  # sem resposta não há o que reaproveitar
-        app.state.wv.collections.get("Pergunta").data.insert(vector=vetor, properties={
-            "pergunta": q.pergunta, "idioma": idioma, "resposta": resposta, "fontes": json.dumps(fontes),
-            "modelo": LLM_MODEL, "palestra_id": q.palestra_id or "", "versao_indice": VERSAO_INDICE,
-            "criado_em": datetime.now(timezone.utc), "reutilizacoes": 0})
+    if not (resposta and fontes):  # sem resposta não há o que reaproveitar
+        return
+    col = app.state.wv.collections.get("Pergunta")
+    # "Gerar de novo" substitui a resposta guardada da mesma pergunta (e herda a contagem de reaproveitamentos)
+    iguais = col.query.near_vector(vetor, limit=10, distance=CACHE_DIST, filters=filtro_igual(q, idioma)).objects
+    vezes = sum(o.properties["reutilizacoes"] for o in iguais)
+    for o in iguais:
+        col.data.delete_by_id(o.uuid)
+    col.data.insert(vector=vetor, properties={
+        "pergunta": q.pergunta, "idioma": idioma, "resposta": resposta, "fontes": json.dumps(fontes),
+        "modelo": LLM_MODEL, "palestra_id": q.palestra_id or SEM_PALESTRA, "versao_indice": VERSAO_INDICE,
+        "criado_em": datetime.now(timezone.utc), "reutilizacoes": vezes})
 
 
 async def lembrar(q, idioma, vetor, resposta, fontes):
@@ -518,7 +529,7 @@ def frequentes(idioma: str = "pt"):
     res = app.state.wv.collections.get("Pergunta").query.fetch_objects(
         limit=8, sort=Sort.by_property("reutilizacoes", ascending=False),
         filters=Filter.by_property("idioma").equal(idioma) & Filter.by_property("versao_indice").equal(VERSAO_INDICE)
-        & Filter.by_property("palestra_id").equal("") & Filter.by_property("reutilizacoes").greater_or_equal(1))
+        & Filter.by_property("palestra_id").equal(SEM_PALESTRA) & Filter.by_property("reutilizacoes").greater_or_equal(1))
     return [{"pergunta": o.properties["pergunta"], "vezes": o.properties["reutilizacoes"] + 1} for o in res.objects]
 
 
