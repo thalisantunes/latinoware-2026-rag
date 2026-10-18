@@ -17,5 +17,11 @@ dependencies = [
     "uvicorn==0.54.0",
 ]
 
+[project.optional-dependencies]
+rerank = [
+    "sentence-transformers==5.1.1",
+    "torch==2.8.0",
+]
+
 [tool.uv]
 package = false

@@ -139,7 +139,8 @@ def test_ask_stream():
             elif linha.startswith("data: "):
                 ultimo = json.loads(linha[6:])
     sem_tokens = [e for e in eventos if e != "token"]
-    assert sem_tokens == ["etapa", "fontes", "etapa", "fim"]
+    # com reranker ligado há a etapa "reordenando" antes das fontes
+    assert sem_tokens in (["etapa", "fontes", "etapa", "fim"], ["etapa", "etapa", "fontes", "etapa", "fim"])
     assert eventos.count("token") > 1
     assert "home assistant" in ultimo["resposta"].lower()
 

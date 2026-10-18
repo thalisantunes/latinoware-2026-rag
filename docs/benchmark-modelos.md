@@ -95,3 +95,15 @@ Decisão: **fica o qwen3:14b**.
   qualidade e cauda de latência, ou para liberar a GPU para o reranker.
 - Limites: 30-33 perguntas, 1 juiz, só a 1ª rodada julgada, diferenças de 0,3-0,6 em escala 0-6 sem intervalo
   de confiança. Removidos do disco: qwen3.5:9b e ministral-3:8b; gemma4 mantido até a decisão.
+
+### Decisão da orquestradora (2026-10-18, depois do §6)
+
+A janauba-55 decidiu trocar a geração para **gemma4:12b-it-qat** (maior nota do juiz, 5,9 × 5,0; instante
+fora da grade 100%; p95 38% menor; 3,7 GB a menos de VRAM) e, no mesmo passo, ligar o reranker
+`bge-reranker-v2-m3` na GPU da estação (critério ≤ 0,5 s e nenhuma piora no `make avaliar`).
+- Reranker local (sentence-transformers, fp16): 0,25 s para 32 trechos inteiros, ~1,4 GB de VRAM;
+  `make avaliar`: recall@8 10/10 (igual), 9 em 1º lugar (antes 8).
+- Ponta a ponta no `/ask/stream`, 20 perguntas do benchmark, gemma4 + reranker: fontes em 0,42 s (p50),
+  total p50 5,3 s e p95 10,6 s.
+- qwen3:14b fica instalado como alternativa até 2026-11-01 (`LLM_MODEL=qwen3:14b` no `.env`); depois sai
+  se ninguém reclamar.

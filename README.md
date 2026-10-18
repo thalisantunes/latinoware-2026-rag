@@ -49,8 +49,10 @@ Design decisions:
   `release_timestamp`, or the start of the room's first activity that day (marked
   `alinhamento: estimado`; the page shows "horário estimado"). If a room has two lives on the
   same day with no known start, their chunks get no talk assigned.
-- **Answer** with local `qwen3:14b`, temperature 0.2, grounded only on the chunks, citing `[n]`
-  (chosen by benchmark against qwen3.5, gemma4 and ministral-3: `docs/benchmark-modelos.md`).
+- **Optional reranking** of the 32 candidates with `bge-reranker-v2-m3` on the GPU (~0.25 s): `uv sync --extra
+  rerank` and `RERANK_LOCAL=BAAI/bge-reranker-v2-m3` in `.env`.
+- **Answer** with local `gemma4:12b-it-qat`, temperature 0.2, grounded only on the chunks, citing `[n]`
+  (chosen by benchmark against qwen3:14b, qwen3.5 and ministral-3: `docs/benchmark-modelos.md`).
 
 ### Requirements
 
@@ -66,7 +68,7 @@ Design decisions:
 
 ```bash
 ollama pull bge-m3
-ollama pull qwen3:14b
+ollama pull gemma4:12b-it-qat
 uv sync                 # creates .venv with Python 3.12 and versions pinned in uv.lock
 cp .env.example .env    # adjust ports and models if needed
 ```
@@ -228,8 +230,10 @@ Decisiones:
   espacio en el día (marcado `alinhamento: estimado`; la página muestra "horário estimado"). Si
   un espacio tiene dos lives el mismo día sin inicio conocido, sus fragmentos quedan sin charla
   asignada.
-- **Respuesta** con `qwen3:14b` local (elegido por benchmark frente a qwen3.5, gemma4 y ministral-3:
-  `docs/benchmark-modelos.md`), temperatura 0,2, basada solo en los fragmentos, citando
+- **Reordenamiento opcional** de los 32 candidatos con `bge-reranker-v2-m3` en la GPU (~0,25 s): `uv sync
+  --extra rerank` y `RERANK_LOCAL=BAAI/bge-reranker-v2-m3` en el `.env`.
+- **Respuesta** con `gemma4:12b-it-qat` local (elegido por benchmark frente a qwen3:14b, qwen3.5 y
+  ministral-3: `docs/benchmark-modelos.md`), temperatura 0,2, basada solo en los fragmentos, citando
   `[n]`.
 
 ### Requisitos
@@ -246,7 +250,7 @@ Decisiones:
 
 ```bash
 ollama pull bge-m3
-ollama pull qwen3:14b
+ollama pull gemma4:12b-it-qat
 uv sync                 # crea .venv con Python 3.12 y versiones fijadas en uv.lock
 cp .env.example .env    # ajusta puertos y modelos si hace falta
 ```
@@ -408,8 +412,10 @@ Decisões:
   `release_timestamp` do YouTube, ou o início da primeira atividade do espaço no dia (marcado
   `alinhamento: estimado`, e a página mostra "horário estimado"). Se o espaço tem duas lives no
   mesmo dia sem início conhecido, os trechos ficam sem palestra atribuída.
-- **Resposta** com `qwen3:14b` local, temperatura 0,2, só com base nos trechos, citando `[n]`
-  (escolhido por benchmark contra qwen3.5, gemma4 e ministral-3: `docs/benchmark-modelos.md`).
+- **Reordenação opcional** dos 32 candidatos com `bge-reranker-v2-m3` na GPU (~0,25 s): `uv sync --extra
+  rerank` e `RERANK_LOCAL=BAAI/bge-reranker-v2-m3` no `.env`.
+- **Resposta** com `gemma4:12b-it-qat` local, temperatura 0,2, só com base nos trechos, citando `[n]`
+  (escolhido por benchmark contra qwen3:14b, qwen3.5 e ministral-3: `docs/benchmark-modelos.md`).
 
 ### Requisitos
 
@@ -425,7 +431,7 @@ Decisões:
 
 ```bash
 ollama pull bge-m3
-ollama pull qwen3:14b
+ollama pull gemma4:12b-it-qat
 uv sync                 # cria .venv com Python 3.12 e versões travadas em uv.lock
 cp .env.example .env    # ajuste portas e modelos se precisar
 ```
