@@ -33,6 +33,11 @@ LLM_MODEL = os.environ.get("LLM_MODEL", "qwen3:14b")
 LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "https://api.openai.com/v1")
 LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
 ALPHA = float(os.environ.get("HYBRID_ALPHA", 0.75))  # 0 = só BM25, 1 = só vetor
+# reranker opcional (bge-reranker-v2-m3) com API no formato Jina/Cohere: {"query","documents"} -> results[]
+RERANK_URL = os.environ.get("RERANK_URL", "")
+RERANK_MODEL = os.environ.get("RERANK_MODEL", "bge-reranker-v2-m3")
+# em CPU o reranker leva ~0,4 s por trecho: só os primeiros RERANK_TOP, com o texto cortado
+RERANK_TOP = int(os.environ.get("RERANK_TOP", 16))
 CORS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "https://ilove.the.br,https://www.ilove.the.br,https://rede-cidades.pages.dev,https://latinoware.org,https://www.latinoware.org,http://localhost:8765").split(",")]
 MAX_TOKENS = int(os.environ.get("LLM_MAX_TOKENS", 800))
 # sem limite, uma palestra longa e bem transcrita ocupava 7 das 8 fontes
@@ -182,10 +187,6 @@ def video(url):
     return (m[1], int(m[2])) if m else (None, None)
 
 
-def buscar(pergunta, vetor, k):
-    return selecionar(app.state.wv.collections.get("Trecho"), pergunta, vetor, k)
-
-
 def da_palestra(palestra_id, k):
     """Resumo do site primeiro e transcrição em ordem de tempo; acima de k, pedaços espalhados pela palestra."""
     res = app.state.wv.collections.get("Trecho").query.fetch_objects(
@@ -199,23 +200,53 @@ def da_palestra(palestra_id, k):
     return resumos + falas
 
 
-def selecionar(trecho, pergunta, vetor, k):
-    """Busca híbrida e corte em k; também usada por 06_avaliar_busca.py."""
+def candidatos(trecho, pergunta, vetor, k):
+    """Busca híbrida com folga (k*4), sem repetições."""
     res = trecho.query.hybrid(query=pergunta, vector=vetor, alpha=ALPHA, limit=k * 4)
     # keynotes são transmitidas em vários espaços: o mesmo resumo aparece repetido na grade
-    vistos, unicos, por_palestra = set(), [], {}
+    vistos, unicos = set(), []
     for o in res.objects:
         t = o.properties
-        titulo = re.sub(r"\W", "", t["palestra_titulo"].lower())
-        chave = (titulo, t["palestrantes"]) if t["fonte"] == "resumo" else t["texto"]
-        # o limite vale para transcrições de uma palestra (título + horário, pois palestra_id
-        # repete entre salas); resumo, bio e trecho fora da grade passam sempre
-        palestra = (titulo, t["inicio"]) if t["fonte"] == "transcricao" and t["palestra_id"] else chave
-        if chave not in vistos and por_palestra.get(palestra, 0) < MAX_POR_PALESTRA:
+        chave = (re.sub(r"\W", "", t["palestra_titulo"].lower()), t["palestrantes"]) if t["fonte"] == "resumo" else t["texto"]
+        if chave not in vistos:
             vistos.add(chave)
-            por_palestra[palestra] = por_palestra.get(palestra, 0) + 1
             unicos.append(t)
-    return unicos[:k]
+    return unicos
+
+
+def reordenar(pergunta, trechos):
+    """Ordena pelo reranker; se ele falhar, segue a ordem da busca (o /ask nunca cai por isso)."""
+    topo, resto = trechos[:RERANK_TOP], trechos[RERANK_TOP:]
+    if not RERANK_URL or len(topo) < 2:
+        return trechos
+    try:
+        r = httpx.post(RERANK_URL, timeout=30, json={
+            "query": pergunta, "documents": [f"{t['palestra_titulo']}\n{t['texto']}"[:600] for t in topo]})
+        r.raise_for_status()
+        ordem = sorted(r.json()["results"], key=lambda x: -x["relevance_score"])
+        return [topo[x["index"]] for x in ordem] + resto
+    except Exception:
+        log.exception("reranker indisponível; segue sem reordenar")
+        return trechos
+
+
+def limitar(trechos, k):
+    """Até MAX_POR_PALESTRA transcrições por palestra (título + horário, pois palestra_id repete entre
+    salas); resumo, bio e trecho fora da grade passam sempre."""
+    por_palestra, saida = {}, []
+    for t in trechos:
+        if t["fonte"] == "transcricao" and t["palestra_id"]:
+            palestra = (re.sub(r"\W", "", t["palestra_titulo"].lower()), t["inicio"])
+            if por_palestra.get(palestra, 0) >= MAX_POR_PALESTRA:
+                continue
+            por_palestra[palestra] = por_palestra.get(palestra, 0) + 1
+        saida.append(t)
+    return saida[:k]
+
+
+def selecionar(trecho, pergunta, vetor, k):
+    """Busca, reordenação e corte em k; também usada por 06_avaliar_busca.py."""
+    return limitar(reordenar(pergunta, candidatos(trecho, pergunta, vetor, k)), k)
 
 
 @app.post("/ask")
@@ -239,14 +270,20 @@ def cabecalho(t):
     return f"{t['palestra_titulo']} | {t['palestrantes']} | transcrição: {quando}"
 
 
-async def preparar(q):
-    """Idioma, prompt (sistema, usuário) e fontes; a geração fica para quem chama."""
+async def passos(q):
+    """Prepara a resposta em passos: ("etapa", nome) para o stream e, no fim, ("pronto", (idioma, prompt,
+    fontes)). A geração fica para quem chama."""
     idioma = q.idioma or detectar_idioma(q.pergunta)
     try:
         if q.palestra_id:
             trechos = await asyncio.to_thread(da_palestra, q.palestra_id, max(q.k, 12))
         else:
-            trechos = await asyncio.to_thread(buscar, q.pergunta, await embed(q.pergunta), q.k)
+            achados = await asyncio.to_thread(candidatos, app.state.wv.collections.get("Trecho"), q.pergunta,
+                                              await embed(q.pergunta), q.k)
+            if RERANK_URL:
+                yield "etapa", "reordenando"
+                achados = await asyncio.to_thread(reordenar, q.pergunta, achados)
+            trechos = limitar(achados, q.k)
     except Exception:
         log.exception("falha na busca")
         raise HTTPException(503, "busca indisponível") from None
@@ -263,7 +300,13 @@ async def preparar(q):
                "palestra_id": t["palestra_id"] or None,
                "inicio_video_s": t["inicio_video_s"] if t["video_id"] else None}
               for i, t in enumerate(trechos, 1)]
-    return idioma, prompt, fontes
+    yield "pronto", (idioma, prompt, fontes)
+
+
+async def preparar(q):
+    async for tipo, valor in passos(q):
+        if tipo == "pronto":
+            return valor
 
 
 async def responder(q):
@@ -297,7 +340,11 @@ async def ask_stream(q: Pergunta):
         try:
             yield sse("etapa", {"etapa": "buscando"})
             try:
-                idioma, prompt, fontes = await preparar(q)
+                async for tipo, valor in passos(q):
+                    if tipo == "etapa":
+                        yield sse("etapa", {"etapa": valor})
+                    else:
+                        idioma, prompt, fontes = valor
             except HTTPException as e:
                 yield sse("erro", {"status": e.status_code, "detalhe": e.detail})
                 return
@@ -328,7 +375,7 @@ async def ask_stream(q: Pergunta):
 
 @app.get("/health")
 def health():
-    return {"ok": app.state.wv.is_ready(), "modelo": LLM_MODEL, "reranker": None}
+    return {"ok": app.state.wv.is_ready(), "modelo": LLM_MODEL, "reranker": RERANK_MODEL if RERANK_URL else None}
 
 
 # página, componente e catálogo; montado por último para não engolir /ask e /health

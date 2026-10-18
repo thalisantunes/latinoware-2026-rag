@@ -188,3 +188,26 @@ def test_resumo_da_palestra():
     assert d["resposta"].strip()
     assert httpx.post(f"{API_URL}/ask", json={"pergunta": "abc", "palestra_id": "x y"}).status_code == 422
     assert httpx.post(f"{API_URL}/ask", json={"pergunta": "abc", "palestra_id": "nao-existe"}).status_code == 404
+
+
+def test_reordenar(monkeypatch):
+    trechos = [{"palestra_titulo": f"t{i}", "texto": "x"} for i in range(4)]
+    monkeypatch.setattr(api, "RERANK_URL", "http://reranker")
+    monkeypatch.setattr(api, "RERANK_TOP", 3)
+
+    class Resposta:
+        def raise_for_status(self):
+            pass
+
+        def json(self):  # o reranker prefere o 3º, depois o 1º e o 2º
+            return {"results": [{"index": 0, "relevance_score": 0.5}, {"index": 1, "relevance_score": -1},
+                                {"index": 2, "relevance_score": 2}]}
+
+    monkeypatch.setattr(api.httpx, "post", lambda *a, **k: Resposta())
+    assert [t["palestra_titulo"] for t in api.reordenar("q", trechos)] == ["t2", "t0", "t1", "t3"]
+
+    def falha(*a, **k):
+        raise api.httpx.ConnectError("fora do ar")
+
+    monkeypatch.setattr(api.httpx, "post", falha)
+    assert api.reordenar("q", trechos) == trechos  # sem reranker, segue a ordem da busca
