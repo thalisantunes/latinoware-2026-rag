@@ -36,6 +36,10 @@ from pydantic import BaseModel, Field
 OLLAMA = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
 EMBED_MODEL = os.environ.get("EMBED_MODEL", "bge-m3")
 LLM_MODEL = os.environ.get("LLM_MODEL", "gemma4:12b-it-qat")
+# Ollama que gera as respostas (padrão: o local). Outro host da rede local, p.ex. a segunda GPU: se ele não
+# responder, a API volta sozinha ao modo só busca. A URL fica fora do repo (arquivo local carregado pelo systemd).
+GERACAO = (os.environ.get("OLLAMA_GERACAO_URL") or OLLAMA).rstrip("/")
+LLM_KEEP_ALIVE = os.environ.get("LLM_KEEP_ALIVE", "")  # vazio = o padrão do Ollama; ex.: 10m descarrega o modelo parado
 LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "https://api.openai.com/v1")
 LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
 ALPHA = float(os.environ.get("HYBRID_ALPHA", 0.75))  # 0 = só BM25, 1 = só vetor
@@ -59,6 +63,13 @@ METRICAS = Path(__file__).parent / "data" / "metricas"
 BRT = timezone(timedelta(hours=-3))  # o dia das métricas é o de Brasília, não o UTC
 _trava_metricas = threading.Lock()
 ARQ_VERSAO = Path(__file__).parent / "data" / "versao_indice.txt"
+# modo só busca: com este arquivo a API não chama o LLM e responde só com as palestras e os links do vídeo
+# (`make sem-ia` cria e descarrega o modelo; `make com-ia` apaga). Também vale quando OLLAMA_GERACAO_URL não responde.
+SEM_IA = Path(__file__).parent / "data" / "sem-ia"
+AVISO_SEM_IA = {"pt": "Resumo com IA indisponível agora; veja as palestras mais relevantes.",
+                "en": "AI summary unavailable right now; see the most relevant talks.",
+                "es": "Resumen con IA no disponible ahora; mira las charlas más relevantes."}
+_geracao = {"ate": 0.0, "ok": True}  # última sondagem de GERACAO e até quando vale
 
 
 def versao_indice():
@@ -177,6 +188,26 @@ async def embed(texto):
     return r.json()["embeddings"][0]
 
 
+async def geracao_disponivel():
+    """False no modo só busca (arquivo-flag) ou com OLLAMA_GERACAO_URL fora do ar (sondagem de 2 s, vale por 15 s)."""
+    if SEM_IA.exists():
+        return False
+    if LLM_API_KEY or GERACAO == OLLAMA:
+        return True
+    agora = time.monotonic()
+    if agora >= _geracao["ate"]:
+        try:
+            ok = (await app.state.http.get(f"{GERACAO}/api/version", timeout=2)).is_success
+        except httpx.HTTPError:
+            ok = False
+        _geracao.update(ate=agora + 15, ok=ok)
+    return _geracao["ok"]
+
+
+def so_busca(idioma, fontes):
+    return {"resposta": AVISO_SEM_IA[idioma], "idioma": idioma, "fontes": fontes, "reaproveitada": False, "sem_ia": True}
+
+
 async def pedacos(sistema, usuario):
     """Texto da resposta em pedaços, à medida que o LLM gera."""
     mensagens = [{"role": "system", "content": sistema}, {"role": "user", "content": usuario}]
@@ -194,8 +225,8 @@ async def pedacos(sistema, usuario):
                     escolhas = d.get("choices") or [{}]
                     yield escolhas[0].get("delta", {}).get("content") or ""
         return
-    async with app.state.http.stream("POST", f"{OLLAMA}/api/chat", json={
-            "model": LLM_MODEL, "messages": mensagens, "stream": True, "think": False,
+    async with app.state.http.stream("POST", f"{GERACAO}/api/chat", json={
+            "model": LLM_MODEL, "messages": mensagens, "stream": True, "think": False, **({"keep_alive": LLM_KEEP_ALIVE} if LLM_KEEP_ALIVE else {}),
             "options": {"temperature": 0.2, "num_ctx": 16384, "num_predict": MAX_TOKENS}}) as r:
         r.raise_for_status()
         async for linha in r.aiter_lines():
@@ -337,22 +368,24 @@ async def ja_respondida(q):
 
 @app.post("/ask")
 async def ask(q: Pergunta):
-    inicio, status, cache, vazio = time.monotonic(), 500, False, False
+    inicio, status, cache, vazio, sem_ia = time.monotonic(), 500, False, False, False
     try:
         if guardada := await ja_respondida(q):
             status, cache, vazio = 200, True, not guardada["fontes"]
             return guardada
         if GERACOES.locked():
             raise HTTPException(429, "muitas perguntas ao mesmo tempo; tente de novo em instantes")
+        await geracao_disponivel()  # a sondagem do remoto não ocupa vaga da GPU
         async with GERACOES:
             r = await responder(q)
         status, cache, vazio = 200, r.get("reaproveitada", False), not r["fontes"]
+        sem_ia = r.get("sem_ia", False)
         return r
     except HTTPException as e:
         status = e.status_code
         raise
     finally:
-        registrar("ask", q, inicio, status, cache, vazio)
+        registrar("ask", q, inicio, status, cache, vazio, sem_ia)
 
 
 def preparar_historico(wv):
@@ -369,11 +402,11 @@ def preparar_historico(wv):
         Property(name="criado_em", data_type=DataType.DATE), Property(name="reutilizacoes", data_type=DataType.INT)])
 
 
-def registrar(rota, q, inicio, status, cache=False, sem_resposta=False):
+def registrar(rota, q, inicio, status, cache=False, sem_resposta=False, sem_ia=False):
     """Métrica anônima de uma pergunta: rota, idioma, status, cache, sem resposta, resumo e duração."""
     ev = {"ts": datetime.now(BRT).isoformat(timespec="seconds"), "rota": rota,
           "idioma": q.idioma or detectar_idioma(q.pergunta), "status": status, "cache": cache,
-          "sem_resposta": sem_resposta, "resumo": bool(q.palestra_id), "ms": round((time.monotonic() - inicio) * 1000)}
+          "sem_resposta": sem_resposta, "sem_ia": sem_ia, "resumo": bool(q.palestra_id), "ms": round((time.monotonic() - inicio) * 1000)}
     try:
         with _trava_metricas:
             METRICAS.mkdir(parents=True, exist_ok=True)
@@ -396,7 +429,7 @@ def ler_metricas(dia):
 
 def resumo(eventos):
     # tempo de quem gerou: sem cache e com fontes (sem fontes o stream nem chama o LLM)
-    ok = sorted(e["ms"] for e in eventos if e["status"] == 200 and not e["cache"] and not e["sem_resposta"])
+    ok = sorted(e["ms"] for e in eventos if e["status"] == 200 and not e["cache"] and not e["sem_resposta"] and not e.get("sem_ia"))
     pct = lambda p: round(ok[min(len(ok) - 1, math.ceil(p * len(ok)) - 1)] / 1000, 1) if ok else None  # noqa: E731
     return {"perguntas": len(eventos), "idiomas": dict(Counter(e["idioma"] for e in eventos)),
             "reaproveitadas": sum(e["cache"] for e in eventos), "resumos": sum(e["resumo"] for e in eventos),
@@ -541,6 +574,8 @@ async def responder(q):
     if tipo == "cache":
         return valor
     idioma, prompt, fontes, vetor = valor
+    if not await geracao_disponivel():
+        return so_busca(idioma, fontes)
     try:
         resposta = limpar(await gerar(*prompt))
     except Exception:
@@ -568,10 +603,11 @@ async def ask_stream(q: Pergunta):
         registrar("stream", q, inicio, 429)
         raise HTTPException(429, "muitas perguntas ao mesmo tempo; tente de novo em instantes")
     # o corpo do stream só roda depois do handler: a vaga é tomada aqui, senão o 429 nunca dispara
+    await geracao_disponivel()
     await GERACOES.acquire()
     vaga = [True]  # liberar() roda no fim do corpo e no background: só a primeira vez solta
     # 499 = o cliente saiu antes do fim (inclusive antes de o corpo começar); vira 200 no fim, 500 em falha
-    m = {"status": 499, "cache": False, "sem_resposta": False, "registrado": False}
+    m = {"status": 499, "cache": False, "sem_resposta": False, "sem_ia": False, "registrado": False}
 
     def liberar():
         if vaga:
@@ -579,7 +615,7 @@ async def ask_stream(q: Pergunta):
             GERACOES.release()
         if not m["registrado"]:  # também quando o cliente cai antes de o corpo começar
             m["registrado"] = True
-            registrar("stream", q, inicio, m["status"], m["cache"], m["sem_resposta"])
+            registrar("stream", q, inicio, m["status"], m["cache"], m["sem_resposta"], m["sem_ia"])
 
     async def eventos():
         try:
@@ -604,6 +640,10 @@ async def ask_stream(q: Pergunta):
             if not fontes:  # nada achado: não ocupa a GPU
                 m.update(status=200, sem_resposta=True)
                 yield sse("fim", {"resposta": "", "idioma": idioma})
+                return
+            if not await geracao_disponivel():  # só as palestras e os links; não entra no histórico
+                m.update(status=200, sem_ia=True)
+                yield sse("fim", so_busca(idioma, fontes))
                 return
             yield sse("etapa", {"etapa": "escrevendo", "modelo": LLM_MODEL})
             resposta = []
@@ -676,12 +716,18 @@ def norma(pergunta):
 
 @app.get("/health")
 def health():
-    """ok exige o Weaviate e o Ollama (embedding e geração); com provedor externo, só o Weaviate."""
-    try:
-        llm = bool(LLM_API_KEY) or httpx.get(f"{OLLAMA}/api/version", timeout=3).is_success
-    except httpx.HTTPError:
-        llm = False
-    return {"ok": app.state.wv.is_ready() and llm, "weaviate": app.state.wv.is_ready(), "llm": llm, "modelo": LLM_MODEL, "reranker": (RERANK_LOCAL if _reranker is not False else None) or (RERANK_MODEL if RERANK_URL else None)}
+    """ok exige o Weaviate e o Ollama local (embedding); sem a geração (OLLAMA_GERACAO_URL) a API segue ok, em modo só busca.
+    sem_ia = a geração está desligada agora: a API responde só com as palestras e os links."""
+    def vivo(url):
+        try:
+            return httpx.get(f"{url}/api/version", timeout=3).is_success
+        except httpx.HTTPError:
+            return False
+    embed_ok = vivo(OLLAMA)
+    llm = bool(LLM_API_KEY) or (embed_ok if GERACAO == OLLAMA else vivo(GERACAO))
+    sem_ia = SEM_IA.exists() or not llm
+    wv = app.state.wv.is_ready()
+    return {"ok": wv and embed_ok, "weaviate": wv, "llm": llm, "sem_ia": sem_ia, "modelo": LLM_MODEL, "reranker": (RERANK_LOCAL if _reranker is not False else None) or (RERANK_MODEL if RERANK_URL else None)}
 
 
 # página, componente e catálogo; montado por último para não engolir /ask e /health

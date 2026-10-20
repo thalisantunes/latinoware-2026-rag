@@ -205,6 +205,7 @@
       vazio: "Nenhum trecho encontrado para essa pergunta. Tente outras palavras ou o nome de um palestrante.",
       erro: "Não foi possível responder agora.", ocupado: "Muitas perguntas ao mesmo tempo. Tente de novo em alguns segundos.",
       caiu: "A conexão caiu no meio da resposta. Tente de novo.",
+      semIa: "Resumo com IA indisponível agora; veja as palestras mais relevantes.",
       rede: "A IA está fora do ar agora (roda numa GPU doméstica). A programação abaixo continua disponível.", demora: "O servidor demorou demais para responder.", tentar: "Tentar de novo",
       tipo: { resumo: "Resumo", bio: "Palestrante", transcricao: "Vídeo" },
       assistir: "Assistir no YouTube", semGravacao: "Sem gravação",
@@ -236,6 +237,7 @@
       vazio: "No excerpts found for this question. Try other words or a speaker's name.",
       erro: "Could not answer right now.", ocupado: "Too many questions at once. Try again in a few seconds.",
       caiu: "The connection dropped in the middle of the answer. Try again.",
+      semIa: "AI summary unavailable right now; see the most relevant talks.",
       rede: "The AI is offline right now (it runs on a home GPU). The schedule below is still available.", demora: "The server took too long to answer.", tentar: "Try again",
       tipo: { resumo: "Abstract", bio: "Speaker", transcricao: "Video" },
       assistir: "Watch on YouTube", semGravacao: "No recording",
@@ -267,6 +269,7 @@
       vazio: "No se encontraron fragmentos para esta pregunta. Prueba otras palabras o el nombre de un ponente.",
       erro: "No se pudo responder ahora.", ocupado: "Demasiadas preguntas a la vez. Inténtalo de nuevo en unos segundos.",
       caiu: "La conexión se cortó en medio de la respuesta. Inténtalo de nuevo.",
+      semIa: "Resumen con IA no disponible ahora; mira las charlas más relevantes.",
       rede: "La IA está fuera de línea ahora (corre en una GPU doméstica). La programación de abajo sigue disponible.", demora: "El servidor tardó demasiado en responder.", tentar: "Intentar de nuevo",
       tipo: { resumo: "Resumen", bio: "Ponente", transcricao: "Video" },
       assistir: "Ver en YouTube", semGravacao: "Sin grabación",
@@ -309,7 +312,7 @@
     const [q1, qpag, q2] = t.privPerg;
     $("privperg").replaceChildren(q1, link(qpag, "https://ilove.the.br/privacidade/"), q2);
     $("lfaq").textContent = t.lfaq;
-    $("fora").textContent = t.rede;
+    $("fora").textContent = fora ? t.rede : t.semIa;
     frequentes();
     const [p1, email, p2, pagina, p3] = t.priv;
     $("privtxt").replaceChildren(p1, el("a", { href: `mailto:${email}`, textContent: email }), p2,
@@ -401,8 +404,9 @@
       .then((d) => { servidor = d; fora = !d.ok; }).catch(() => { fora = true; })
       .finally(() => {  // só mexe no aviso se mudou (a região viva repete) e não no meio de uma resposta
         if (ocupado) return;
-        if ($("fora").textContent !== ui().rede) $("fora").textContent = ui().rede;
-        if ($("fora").hidden !== !fora) $("fora").hidden = !fora;
+        const aviso = fora ? ui().rede : ui().semIa;
+        if ($("fora").textContent !== aviso) $("fora").textContent = aviso;
+        if ($("fora").hidden !== !(fora || servidor.sem_ia)) $("fora").hidden = !(fora || servidor.sem_ia);
       });
   }
   saude();
@@ -441,7 +445,7 @@
       .then(() => avisar(ok), () => avisar(t.naoCopiou));
     const link = `${location.origin}${location.pathname}?pergunta=${encodeURIComponent(pergunta)}`;
     // "Ouvir resposta" (ou "Ouvir resumo" no "Resumo com IA") pelo leitor do componente; sem voz no navegador, sem botão
-    const voz = customElements.get("latinoware-catalogo")?.leitor?.(d.resposta, tem(d.idioma) ? d.idioma : lingua(), !!palestraId);
+    const voz = d.sem_ia ? null : customElements.get("latinoware-catalogo")?.leitor?.(d.resposta, tem(d.idioma) ? d.idioma : lingua(), !!palestraId);
     return el("div", { className: "partilha" }, ...(voz ? [voz] : []),
       el("button", { type: "button", textContent: t.copiar, onclick: () => copiar(textoPuro(pergunta, d, fontes, t), t.copiado) }),
       el("button", { type: "button", textContent: t.compartilhar, onclick: () => {
@@ -475,7 +479,7 @@
     customElements.get("latinoware-catalogo")?.calar?.();  // a leitura da resposta anterior para
     $("b").setAttribute("aria-disabled", "true"); $("b").textContent = t.enviando;
     history.replaceState(null, "", location.pathname + location.search);  // tira o #fonte-n da resposta anterior
-    const nomes = servidor.reranker ? ["buscando", "reordenando", "escrevendo"] : ["buscando", "escrevendo"];
+    const nomes = ["buscando", ...(servidor.reranker ? ["reordenando"] : []), ...(servidor.sem_ia ? [] : ["escrevendo"])];
     const etapas = el("ol", { className: "etapas" }, ...nomes.map((n) => el("li", { textContent: t.etapa[n](servidor.modelo) })));
     const etapa = (nome, modelo) => {
       const atual = nomes.indexOf(nome);
