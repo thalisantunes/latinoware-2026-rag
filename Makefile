@@ -4,7 +4,7 @@ export
 
 PY = uv run python
 
-.PHONY: tudo weaviate coletar audio transcrever sincronizar indexar catalogo api testar avaliar benchmark fotos fotos-limpar videos-individuais novos-videos metricas gabarito-candidatos instalar-timer publicar-site reverter-indice
+.PHONY: tudo weaviate coletar audio transcrever sincronizar indexar catalogo api testar avaliar benchmark fotos fotos-limpar videos-individuais novos-videos metricas gabarito-candidatos instalar-timer publicar-site reverter-indice sem-ia com-ia
 # catalogo antes de indexar: não depende do índice e fica pronto mesmo se a avaliação da busca falhar
 tudo: weaviate coletar audio transcrever sincronizar catalogo indexar
 
@@ -100,3 +100,12 @@ publicar-site:
 	@test -d "$(SITE_RAG)" || { echo "$(SITE_RAG) não existe"; exit 1; }
 	cp $(ARQUIVOS_SITE) "$(SITE_RAG)/"
 	@cd "$(SITE_RAG)" && git status --short -- . || true
+
+# modo só busca: a API responde com as palestras e os links, sem LLM, e o modelo sai da GPU
+sem-ia:
+	touch data/sem-ia
+	-curl -s $(or $(OLLAMA_URL),http://127.0.0.1:11434)/api/generate -d '{"model":"$(LLM_MODEL)","keep_alive":0}' > /dev/null
+	@echo "modo só busca ligado (make com-ia desliga)"
+
+com-ia:
+	rm -f data/sem-ia

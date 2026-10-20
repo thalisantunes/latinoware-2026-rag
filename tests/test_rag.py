@@ -1,5 +1,6 @@
 """Testes. Unitários rodam sempre; os de integração precisam da API no ar (make api)."""
 
+import asyncio
 import importlib.util
 import json
 import os
@@ -368,3 +369,39 @@ def test_reverter_vai_para_a_anterior_a_atual(monkeypatch, tmp_path):
     assert Cliente.alias.mapa["Trecho"] == "Trecho_V2" and (tmp_path / "versao_indice.txt").read_text() == "V2"
     with pytest.raises(SystemExit):  # já está na mais antiga: não há para onde voltar
         indexar.reverter()
+
+
+def test_geracao_disponivel(tmp_path, monkeypatch):
+    monkeypatch.setattr(api, "SEM_IA", tmp_path / "sem-ia")
+    monkeypatch.setattr(api, "LLM_API_KEY", "")
+
+    async def consulta():
+        api.app.state.http = httpx.AsyncClient()
+        try:
+            return await api.geracao_disponivel()
+        finally:
+            await api.app.state.http.aclose()
+
+    monkeypatch.setattr(api, "GERACAO", "http://127.0.0.1:9")  # nada escuta: host remoto fora do ar
+    assert not asyncio.run(consulta())
+    monkeypatch.setattr(api, "GERACAO", api.OLLAMA)
+    assert asyncio.run(consulta())
+    (tmp_path / "sem-ia").touch()  # arquivo-flag liga o modo só busca
+    assert not asyncio.run(consulta())
+
+
+def test_so_busca_nao_chama_o_llm(tmp_path, monkeypatch):
+    fontes = [{"n": 1, "titulo": "Palestra", "url_video": "https://youtu.be/abc?t=10"}]
+
+    async def preparar(q):
+        return "pronto", ("en", ("sistema", "usuario"), fontes, None)
+
+    async def gerar(*_):
+        raise AssertionError("o modo só busca não pode chamar o LLM")
+
+    monkeypatch.setattr(api, "SEM_IA", tmp_path / "sem-ia")
+    (tmp_path / "sem-ia").touch()
+    monkeypatch.setattr(api, "preparar", preparar)
+    monkeypatch.setattr(api, "gerar", gerar)
+    r = asyncio.run(api.responder(api.Pergunta(pergunta="Who talked about Linux?")))
+    assert r["sem_ia"] and r["fontes"] == fontes and r["resposta"] == api.AVISO_SEM_IA["en"]
