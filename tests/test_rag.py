@@ -374,6 +374,9 @@ def test_reverter_vai_para_a_anterior_a_atual(monkeypatch, tmp_path):
 def test_geracao_disponivel(tmp_path, monkeypatch):
     monkeypatch.setattr(api, "SEM_IA", tmp_path / "sem-ia")
     monkeypatch.setattr(api, "LLM_API_KEY", "")
+    monkeypatch.setitem(api._geracao, "ate", 0.0)  # restaurados no fim do teste
+    monkeypatch.setitem(api._geracao, "ok", True)
+    monkeypatch.setattr(api.app.state, "http", None, raising=False)
 
     async def consulta():
         api.app.state.http = httpx.AsyncClient()
@@ -403,5 +406,10 @@ def test_so_busca_nao_chama_o_llm(tmp_path, monkeypatch):
     (tmp_path / "sem-ia").touch()
     monkeypatch.setattr(api, "preparar", preparar)
     monkeypatch.setattr(api, "gerar", gerar)
+
+    async def lembrar(*_):
+        raise AssertionError("o aviso não entra no histórico")
+
+    monkeypatch.setattr(api, "lembrar", lembrar)
     r = asyncio.run(api.responder(api.Pergunta(pergunta="Who talked about Linux?")))
     assert r["sem_ia"] and r["fontes"] == fontes and r["resposta"] == api.AVISO_SEM_IA["en"]

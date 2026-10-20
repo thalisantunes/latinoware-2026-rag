@@ -39,7 +39,7 @@ LLM_MODEL = os.environ.get("LLM_MODEL", "gemma4:12b-it-qat")
 # Ollama que gera as respostas (padrão: o local). Outro host da rede local, p.ex. a segunda GPU: se ele não
 # responder, a API volta sozinha ao modo só busca. A URL fica fora do repo (arquivo local carregado pelo systemd).
 GERACAO = (os.environ.get("OLLAMA_GERACAO_URL") or OLLAMA).rstrip("/")
-LLM_KEEP_ALIVE = os.environ.get("LLM_KEEP_ALIVE", "10m")  # descarrega o modelo da GPU depois de 10 min parado
+LLM_KEEP_ALIVE = os.environ.get("LLM_KEEP_ALIVE", "")  # vazio = o padrão do Ollama; ex.: 10m descarrega o modelo parado
 LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "https://api.openai.com/v1")
 LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
 ALPHA = float(os.environ.get("HYBRID_ALPHA", 0.75))  # 0 = só BM25, 1 = só vetor
@@ -226,7 +226,7 @@ async def pedacos(sistema, usuario):
                     yield escolhas[0].get("delta", {}).get("content") or ""
         return
     async with app.state.http.stream("POST", f"{GERACAO}/api/chat", json={
-            "model": LLM_MODEL, "messages": mensagens, "stream": True, "think": False, "keep_alive": LLM_KEEP_ALIVE,
+            "model": LLM_MODEL, "messages": mensagens, "stream": True, "think": False, **({"keep_alive": LLM_KEEP_ALIVE} if LLM_KEEP_ALIVE else {}),
             "options": {"temperature": 0.2, "num_ctx": 16384, "num_predict": MAX_TOKENS}}) as r:
         r.raise_for_status()
         async for linha in r.aiter_lines():
@@ -368,22 +368,24 @@ async def ja_respondida(q):
 
 @app.post("/ask")
 async def ask(q: Pergunta):
-    inicio, status, cache, vazio = time.monotonic(), 500, False, False
+    inicio, status, cache, vazio, sem_ia = time.monotonic(), 500, False, False, False
     try:
         if guardada := await ja_respondida(q):
             status, cache, vazio = 200, True, not guardada["fontes"]
             return guardada
         if GERACOES.locked():
             raise HTTPException(429, "muitas perguntas ao mesmo tempo; tente de novo em instantes")
+        await geracao_disponivel()  # a sondagem do remoto não ocupa vaga da GPU
         async with GERACOES:
             r = await responder(q)
         status, cache, vazio = 200, r.get("reaproveitada", False), not r["fontes"]
+        sem_ia = r.get("sem_ia", False)
         return r
     except HTTPException as e:
         status = e.status_code
         raise
     finally:
-        registrar("ask", q, inicio, status, cache, vazio)
+        registrar("ask", q, inicio, status, cache, vazio, sem_ia)
 
 
 def preparar_historico(wv):
@@ -400,11 +402,11 @@ def preparar_historico(wv):
         Property(name="criado_em", data_type=DataType.DATE), Property(name="reutilizacoes", data_type=DataType.INT)])
 
 
-def registrar(rota, q, inicio, status, cache=False, sem_resposta=False):
+def registrar(rota, q, inicio, status, cache=False, sem_resposta=False, sem_ia=False):
     """Métrica anônima de uma pergunta: rota, idioma, status, cache, sem resposta, resumo e duração."""
     ev = {"ts": datetime.now(BRT).isoformat(timespec="seconds"), "rota": rota,
           "idioma": q.idioma or detectar_idioma(q.pergunta), "status": status, "cache": cache,
-          "sem_resposta": sem_resposta, "resumo": bool(q.palestra_id), "ms": round((time.monotonic() - inicio) * 1000)}
+          "sem_resposta": sem_resposta, "sem_ia": sem_ia, "resumo": bool(q.palestra_id), "ms": round((time.monotonic() - inicio) * 1000)}
     try:
         with _trava_metricas:
             METRICAS.mkdir(parents=True, exist_ok=True)
@@ -427,7 +429,7 @@ def ler_metricas(dia):
 
 def resumo(eventos):
     # tempo de quem gerou: sem cache e com fontes (sem fontes o stream nem chama o LLM)
-    ok = sorted(e["ms"] for e in eventos if e["status"] == 200 and not e["cache"] and not e["sem_resposta"])
+    ok = sorted(e["ms"] for e in eventos if e["status"] == 200 and not e["cache"] and not e["sem_resposta"] and not e.get("sem_ia"))
     pct = lambda p: round(ok[min(len(ok) - 1, math.ceil(p * len(ok)) - 1)] / 1000, 1) if ok else None  # noqa: E731
     return {"perguntas": len(eventos), "idiomas": dict(Counter(e["idioma"] for e in eventos)),
             "reaproveitadas": sum(e["cache"] for e in eventos), "resumos": sum(e["resumo"] for e in eventos),
@@ -601,10 +603,11 @@ async def ask_stream(q: Pergunta):
         registrar("stream", q, inicio, 429)
         raise HTTPException(429, "muitas perguntas ao mesmo tempo; tente de novo em instantes")
     # o corpo do stream só roda depois do handler: a vaga é tomada aqui, senão o 429 nunca dispara
+    await geracao_disponivel()
     await GERACOES.acquire()
     vaga = [True]  # liberar() roda no fim do corpo e no background: só a primeira vez solta
     # 499 = o cliente saiu antes do fim (inclusive antes de o corpo começar); vira 200 no fim, 500 em falha
-    m = {"status": 499, "cache": False, "sem_resposta": False, "registrado": False}
+    m = {"status": 499, "cache": False, "sem_resposta": False, "sem_ia": False, "registrado": False}
 
     def liberar():
         if vaga:
@@ -612,7 +615,7 @@ async def ask_stream(q: Pergunta):
             GERACOES.release()
         if not m["registrado"]:  # também quando o cliente cai antes de o corpo começar
             m["registrado"] = True
-            registrar("stream", q, inicio, m["status"], m["cache"], m["sem_resposta"])
+            registrar("stream", q, inicio, m["status"], m["cache"], m["sem_resposta"], m["sem_ia"])
 
     async def eventos():
         try:
@@ -639,7 +642,7 @@ async def ask_stream(q: Pergunta):
                 yield sse("fim", {"resposta": "", "idioma": idioma})
                 return
             if not await geracao_disponivel():  # só as palestras e os links; não entra no histórico
-                m["status"] = 200
+                m.update(status=200, sem_ia=True)
                 yield sse("fim", so_busca(idioma, fontes))
                 return
             yield sse("etapa", {"etapa": "escrevendo", "modelo": LLM_MODEL})

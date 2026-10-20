@@ -103,7 +103,7 @@ publicar-site:
 
 # modo só busca: a API responde com as palestras e os links, sem LLM, e o modelo sai da GPU
 sem-ia:
-	touch data/sem-ia
+	mkdir -p data && touch data/sem-ia
 	-curl -s $(or $(OLLAMA_URL),http://127.0.0.1:11434)/api/generate -d '{"model":"$(LLM_MODEL)","keep_alive":0}' > /dev/null
 	@echo "modo só busca ligado (make com-ia desliga)"
 

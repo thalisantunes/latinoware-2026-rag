@@ -117,7 +117,7 @@ scripts directly, use `uv run --env-file .env python 05_api.py`.
 `make com-ia` removes it. While it exists, `/ask`, `/ask/stream` and the MCP tool answer with the most relevant
 talks and the `?t=` video links, no generated text (`"sem_ia": true`, and `resposta` holds the notice "AI summary
 unavailable right now; see the most relevant talks."), and the page shows the same notice. Already-saved answers are
-still served. `LLM_KEEP_ALIVE` (default `10m`) unloads the model from the GPU after it idles.
+still served. `LLM_KEEP_ALIVE` (e.g. `10m`; empty = Ollama default) unloads the model from the GPU after it idles.
 To generate on another Ollama in the local network, set `OLLAMA_GERACAO_URL` (embedding stays on `OLLAMA_URL`); if it
 stops answering, the API falls back to search-only by itself. The URL goes in a file outside the repo, loaded by
 systemd with a second `EnvironmentFile=`. That Ollama has no authentication: private network only.
@@ -336,7 +336,7 @@ En ese modo **las preguntas y los fragmentos recuperados se envían al proveedor
 modelo; `make com-ia` lo borra. Mientras exista, `/ask`, `/ask/stream` y la herramienta MCP responden con las charlas
 más relevantes y los enlaces `?t=` al video, sin texto generado (`"sem_ia": true`; `resposta` trae el aviso "Resumen
 con IA no disponible ahora; mira las charlas más relevantes."), y la página muestra el mismo aviso. Las respuestas ya
-guardadas se siguen sirviendo. `LLM_KEEP_ALIVE` (por defecto `10m`) descarga el modelo de la GPU tras un rato inactivo.
+guardadas se siguen sirviendo. `LLM_KEEP_ALIVE` (p. ej. `10m`; vacío = el de Ollama) descarga el modelo de la GPU tras un rato inactivo.
 Para generar en otro Ollama de la red local, define `OLLAMA_GERACAO_URL` (el embedding sigue en `OLLAMA_URL`); si deja
 de responder, la API vuelve sola a solo búsqueda. La URL va en un archivo fuera del repo, cargado por systemd con un
 segundo `EnvironmentFile=`. Ese Ollama no tiene autenticación: solo red privada.
@@ -554,7 +554,7 @@ pelo `make`; rodando os scripts direto, use `uv run --env-file .env python 05_ap
 `make com-ia` apaga. Enquanto ele existir, `/ask`, `/ask/stream` e a ferramenta do MCP respondem com as palestras
 mais relevantes e os links `?t=` do vídeo, sem texto gerado (`"sem_ia": true`; `resposta` traz o aviso "Resumo com IA
 indisponível agora; veja as palestras mais relevantes."), e a página mostra o mesmo aviso. Respostas já guardadas
-continuam saindo. `LLM_KEEP_ALIVE` (padrão `10m`) descarrega o modelo da GPU depois de um tempo parado.
+continuam saindo. `LLM_KEEP_ALIVE` (ex.: `10m`; vazio = o do Ollama) descarrega o modelo da GPU depois de um tempo parado.
 Para gerar em outro Ollama da rede local, defina `OLLAMA_GERACAO_URL` (o embedding continua no `OLLAMA_URL`); se ele
 parar de responder, a API volta sozinha ao modo só busca. A URL fica num arquivo fora do repo, carregado pelo systemd
 com um segundo `EnvironmentFile=`. Esse Ollama não tem autenticação: só rede privada.
