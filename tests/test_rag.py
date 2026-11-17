@@ -698,9 +698,24 @@ def test_programacao_vai_em_system_com_cache_e_igual_entre_perguntas(monkeypatch
 
 def test_programacao_marca_gravacao_e_junta_keynote_repetida():
     linhas = api.programacao().splitlines()
-    assert sum(l.endswith(" | gravada") for l in linhas) > 20
+    assert sum(l.split(" | ")[-1].startswith(("https://youtu.be/", "https://www.youtube.com/")) for l in linhas) > 20
     keynote = [l for l in linhas if "maddog" in l and "Abertura Oficial" in l]
     assert len(keynote) == 1 and "(e mais" in keynote[0]  # a keynote repetida em todas as salas é uma linha
+
+
+def test_programacao_traz_dia_da_semana_e_url_da_gravacao():
+    video = "https://youtu.be/0WgTllmf2B4?t=11300"
+    texto = api.montar_programacao([atividade("Qua", data="2026-10-14"), atividade("Qui", data="2026-10-15"),
+                                    atividade("Sex", data="2026-10-16", url_video=video),
+                                    atividade("Sem data", data=""), atividade("A | B", data="2026-10-14")])
+    linhas = {l.split(" | ")[4]: l for l in texto.splitlines() if " | " in l and not l.startswith("Uma atividade")}
+    assert linhas["Qua"].startswith("qua 14/10 10:00 | ") and linhas["Qui"].startswith("qui 15/10 ")
+    assert linhas["Sex"].startswith("sex 16/10 10:00 | ") and linhas["Sex"].endswith(f" | Ana | {video}")
+    assert linhas["Qua"].endswith(" | Ana") and "gravada" not in texto  # sem gravação: sem sétimo campo
+    assert linhas["Sem data"].startswith("10:00 | ")  # data ausente: sem dia da semana, sem quebrar
+    assert "A / B" in linhas and linhas["A / B"].count(" | ") == 5  # " | " no título não quebra os campos
+    assert api.programacao().count("sex 16/10 12:00 | Paraguai | ") == 1  # o caso real do catálogo
+    assert "https://youtu.be/0WgTllmf2B4?t=11300" in api.programacao()
 
 
 def test_usage_da_anthropic_vai_para_o_log(monkeypatch, caplog):
@@ -772,7 +787,8 @@ def test_historico_antigo_do_claude_nao_e_reaproveitado(monkeypatch):
 def test_instrucoes_so_no_caminho_da_anthropic():
     texto = api.INSTRUCOES_ANTHROPIC
     for exigido in ("panorama", "[n]", "título, palestrante, espaço, dia e hora", "nunca peça ao visitante a grade",
-                    "N itens", "máximo 15 itens", "só pelo título"):
+                    "N itens", "máximo 15 itens", "só pelo título",
+                    "nunca deduza outro", "informe o link da gravação"):
         assert exigido.lower() in texto.lower()
     for proibida in ("trecho", "contexto", "índice"):  # a instrução não pode ensinar o modelo a dizer isso ao visitante
         assert proibida not in texto.lower()

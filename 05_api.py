@@ -98,7 +98,8 @@ GERACOES = asyncio.Semaphore(int(os.environ.get("MAX_CONCORRENCIA", 2)))
 log = logging.getLogger("uvicorn.error")
 CATALOGO = Path(__file__).parent / "web" / "catalogo.json"  # a grade (07_exportar_catalogo.py), versionada e servida pela própria API
 # a versão entra na chave do histórico das respostas do Claude: subir ao mudar INSTRUCOES_ANTHROPIC ou o formato da programação
-VERSAO_PROMPT = "p2"
+VERSAO_PROMPT = "p3"
+DIAS_SEMANA = ("seg", "ter", "qua", "qui", "sex", "sáb", "dom")
 TIPOS = {"LECTURE": "palestra", "KEYNOTE": "keynote", "MINI_COURSE": "minicurso", "HAND_ONS_SESSION": "hands-on", "OTHER": "outro"}
 
 INSTRUCOES = {
@@ -152,7 +153,10 @@ INSTRUCOES_ANTHROPIC = (
     "programação nem nas fontes numeradas responde, diga que não encontrou essa informação. Se a gravação que "
     "responde não identifica o palestrante, diga isso, informe o espaço e o dia e sugira ouvir a gravação a partir "
     "do instante que aparece no cabeçalho da fonte (escreva o horário, por exemplo 3:54:33). Ao falar com o "
-    "visitante, use as palavras palestras, gravações e programação.")
+    "visitante, use as palavras palestras, gravações e programação. Cada linha da programação começa com o dia da "
+    "semana abreviado (seg, ter, qua, qui, sex, sáb, dom): use sempre o dia da semana da programação e nunca "
+    "deduza outro. Ao recomendar ou localizar uma palestra gravada, informe o link da gravação (o endereço no fim "
+    "da linha da programação), escrito por extenso e sozinho, sem formatação Markdown.")
 # lembrete no fim do prompt: com a pergunta em outra língua, só a instrução de sistema não basta
 LEMBRETE = {"pt": "Responda em português do Brasil.", "en": "Answer in English.",
             "es": "Responde en español."}
@@ -192,7 +196,7 @@ def montar_programacao(todas):
             ativas.append({"data": p.get("data") or "", "hora": p.get("hora_inicio") or "", "espaco": p.get("espaco") or "",
                            "trilha": p.get("trilha") or "", "tipo": p.get("tipo") or "", "titulo": p.get("titulo") or "",
                            "nomes": [s.get("nome") or "" for s in p.get("palestrantes") or []],
-                           "gravada": bool(p.get("url_video") or p.get("url_video_palestra"))})
+                           "video": p.get("url_video") or p.get("url_video_palestra") or ""})
         except Exception:
             log.warning("programação: registro ignorado (malformado)")
     grupos = {}  # keynotes são transmitidas em várias salas: uma linha só (mesmo título, dia, hora, tipo e palestrantes)
@@ -201,15 +205,20 @@ def montar_programacao(todas):
         grupos.setdefault(chave, []).append(p)
     linhas = []
     for g in grupos.values():
-        p = next((p for p in g if p["gravada"]), g[0])
+        p = next((p for p in g if p["video"]), g[0])
         sala = p["espaco"].removeprefix("Espaço ") + (f" (e mais {len(g) - 1} salas)" if len(g) > 1 else "")
-        linhas.append(" | ".join([f"{p['data'][8:]}/{p['data'][5:7]} {p['hora']}", sala, p["trilha"],
-                                  TIPOS.get(p["tipo"], p["tipo"].lower()), p["titulo"], ", ".join(p["nomes"]) or "-"])
-                      + (" | gravada" if p["gravada"] else ""))
+        try:  # o dia da semana vem da data: sem ele o modelo deduz um (16/10/2026 já saiu como sábado)
+            dia = DIAS_SEMANA[datetime.fromisoformat(p["data"]).weekday()] + " "
+        except ValueError:
+            dia = ""
+        quando = (f"{dia}{p['data'][8:]}/{p['data'][5:7]} " if p["data"] else "") + p["hora"]
+        linhas.append(" | ".join([quando, sala, p["trilha"], TIPOS.get(p["tipo"], p["tipo"].lower()),
+                                  p["titulo"].replace(" | ", " / "), ", ".join(p["nomes"]) or "-"])
+                      + (f" | {p['video']}" if p["video"] else ""))
     if not linhas:
         return ""
-    return ("PROGRAMAÇÃO COMPLETA DA LATINOWARE 2026\nUma atividade por linha: dia/mês hora | espaço | trilha | tipo | "
-            "título | palestrantes | \"gravada\" quando há gravação.\n\n" + "\n".join(linhas))
+    return ("PROGRAMAÇÃO COMPLETA DA LATINOWARE 2026\nUma atividade por linha: dia da semana dia/mês hora | espaço | trilha | "
+            "tipo | título | palestrantes | link da gravação, quando há.\n\n" + "\n".join(linhas))
 
 
 _grade = {"mtime": None, "texto": ""}

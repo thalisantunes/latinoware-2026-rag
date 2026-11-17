@@ -209,9 +209,9 @@
       rede: "A IA está fora do ar agora. A programação abaixo continua disponível.", demora: "O servidor demorou demais para responder.", tentar: "Tentar de novo",
       tipo: { resumo: "Resumo", bio: "Palestrante", transcricao: "Vídeo" },
       assistir: "Assistir no YouTube", semGravacao: "Sem gravação",
-      semPalestra: (e, d) => `Trecho sem palestra identificada · ${e}, ${d}`,
+      semPalestra: (e, d) => `Gravação sem palestra identificada · ${e}, ${d}`,
       copiar: "Copiar resposta", compartilhar: "Compartilhar", copiado: "Resposta copiada.", linkCopiado: "Link copiado.",
-      naoCopiou: "Não foi possível copiar.", pergunta: "Pergunta",
+      naoCopiou: "Não foi possível copiar.", linkNaPagina: "link na página", pergunta: "Pergunta",
       priv: ["As fotos dos palestrantes no evento vêm do Flickr oficial, achadas por reconhecimento facial e conferidas por uma pessoa antes de aparecer. Para remover uma foto: ", "privacidade@ilove.the.br", ". Detalhes em ", "Privacidade", "."],
       hcat: "Programação completa", ir: "Ver a programação completa ↓", hsobre: "Sobre",
       sobre: ["Este projeto nasceu de uma conversa com ", "Duda Nogueira", " (", "Weaviate",
@@ -241,9 +241,9 @@
       rede: "The AI is offline right now. The schedule below is still available.", demora: "The server took too long to answer.", tentar: "Try again",
       tipo: { resumo: "Abstract", bio: "Speaker", transcricao: "Video" },
       assistir: "Watch on YouTube", semGravacao: "No recording",
-      semPalestra: (e, d) => `Excerpt with no identified talk · ${e}, ${d}`,
+      semPalestra: (e, d) => `Recording with no identified talk · ${e}, ${d}`,
       copiar: "Copy answer", compartilhar: "Share", copiado: "Answer copied.", linkCopiado: "Link copied.",
-      naoCopiou: "Could not copy.", pergunta: "Question",
+      naoCopiou: "Could not copy.", linkNaPagina: "link on the page", pergunta: "Question",
       priv: ["Speaker photos from the event come from the official Flickr, found by face recognition and checked by a person before they appear. To remove a photo: ", "privacidade@ilove.the.br", ". Details at ", "Privacy", "."],
       hcat: "Full schedule", ir: "See the full schedule ↓", hsobre: "About",
       sobre: ["This project was born from a conversation with ", "Duda Nogueira", " (", "Weaviate",
@@ -273,9 +273,9 @@
       rede: "La IA está fuera de línea ahora. La programación de abajo sigue disponible.", demora: "El servidor tardó demasiado en responder.", tentar: "Intentar de nuevo",
       tipo: { resumo: "Resumen", bio: "Ponente", transcricao: "Video" },
       assistir: "Ver en YouTube", semGravacao: "Sin grabación",
-      semPalestra: (e, d) => `Fragmento sin charla identificada · ${e}, ${d}`,
+      semPalestra: (e, d) => `Grabación sin charla identificada · ${e}, ${d}`,
       copiar: "Copiar respuesta", compartilhar: "Compartir", copiado: "Respuesta copiada.", linkCopiado: "Enlace copiado.",
-      naoCopiou: "No se pudo copiar.", pergunta: "Pregunta",
+      naoCopiou: "No se pudo copiar.", linkNaPagina: "enlace en la página", pergunta: "Pregunta",
       priv: ["Las fotos de los ponentes en el evento vienen del Flickr oficial, encontradas por reconocimiento facial y revisadas por una persona antes de aparecer. Para quitar una foto: ", "privacidade@ilove.the.br", ". Detalles en ", "Privacidad", "."],
       hcat: "Programación completa", ir: "Ver la programación completa ↓", hsobre: "Acerca de",
       sobre: ["Este proyecto nació de una conversación con ", "Duda Nogueira", " (", "Weaviate",
@@ -331,16 +331,62 @@
     return seguro(url) ? el("a", { href: url, target: "_blank", rel: "noopener", textContent: texto }) : el("span", { textContent: texto });
   }
 
-  // troca [n] e [n, m] da resposta por links para as fontes, sem interpretar HTML
+  // endereços de gravação na resposta do Claude: só https do YouTube, escritos por extenso (sem Markdown)
+  const URL_VIDEO = /https:\/\/(?:youtu\.be|www\.youtube\.com)\/[A-Za-z0-9_\-.\/?=&%#+~]+/g;  // só o que uma URL do YouTube usa: aspas, crase, ** e ) ficam de fora
+  const urlVideo = (u) => { try { const x = new URL(u); return x.protocol === "https:" && ["youtu.be", "www.youtube.com"].includes(x.hostname); } catch { return false; } };
+
+  // citações entre colchetes: [1], [1, 2], [1; 2], [1-3] (também – e —), [1, 2 e 3] ("e", "and", "y"); um só leitor para a
+  // resposta e para o painel. reconhecida=false: parece citação (só números e separadores) mas não casa com nenhum formato
+  const ITEM = String.raw`\d+(?:\s*[-–—]\s*\d+)?`;
+  const CITACAO = new RegExp(String.raw`^\s*${ITEM}(?:\s*(?:[,;]|\b(?:e|and|y)\b)\s*${ITEM})*\s*$`, "i");
+  const PARECE = /^\s*\d[\d\s,;\-–—a-z]*$/i;
+  function citacao(colchete) {
+    const dentro = colchete.slice(1, -1);
+    if (CITACAO.test(dentro)) {
+      const ns = dentro.match(/\d+(?:\s*[-–—]\s*\d+)?/g).flatMap((x) => {
+        const [a, b] = x.split(/\s*[-–—]\s*/).map(Number);
+        return b === undefined || b < a || b - a > 50 ? [a, b ?? a] : Array.from({ length: b - a + 1 }, (_, i) => a + i);
+      });
+      return { ns: [...new Set(ns)], reconhecida: true };
+    }
+    return { ns: [], reconhecida: !PARECE.test(dentro) };
+  }
+  const COLCHETES = /(\[[^\[\]]*\])/;
+
+  // troca as citações da resposta por links para as fontes que existem e as URLs de gravação por links externos, sem interpretar HTML
   function comCitacoes(texto, numeros, t) {
     const p = el("div", { className: "resposta" });
-    for (const parte of texto.split(/(\[\d+(?:\s*[,;]\s*\d+)*\])/)) {
-      const ns = /^\[[\d,;\s]+\]$/.test(parte) ? parte.match(/\d+/g).map(Number) : [];
-      if (!ns.length || !ns.every((n) => numeros.has(n))) { p.append(parte); continue; }
-      ns.forEach((n, i) => p.append(i ? " " : "", el("a", {
-        className: "cit", href: `#fonte-${n}`, textContent: n, ariaLabel: `${t.fonte} ${n}` })));
+    const citacoes = (trecho) => {
+      for (const parte of trecho.split(COLCHETES)) {
+        const ns = parte.startsWith("[") ? citacao(parte).ns.filter((n) => numeros.has(n)) : [];
+        if (!ns.length) { p.append(parte); continue; }
+        ns.forEach((n, i) => p.append(i ? " " : "", el("a", {
+          className: "cit", href: `#fonte-${n}`, textContent: n, ariaLabel: `${t.fonte} ${n}` })));
+      }
+    };
+    let fim = 0;
+    for (const m of texto.matchAll(URL_VIDEO)) {
+      const url = m[0].replace(/[.,;:!?]+$/, "");  // pontuação da frase não é do endereço
+      if (!urlVideo(url)) continue;
+      citacoes(texto.slice(fim, m.index));
+      p.append(link(url, url));
+      fim = m.index + url.length;
     }
+    citacoes(texto.slice(fim));
     return p;
+  }
+
+  // números citados na resposta; completo=false se algum colchete parece citação e não foi entendido (o painel então mostra tudo)
+  function citados(texto) {
+    const numeros = new Set();
+    let completo = true;
+    for (const parte of texto.split(COLCHETES)) {
+      if (!parte.startsWith("[")) continue;
+      const c = citacao(parte);
+      c.ns.forEach((n) => numeros.add(n));
+      completo &&= c.reconhecida;
+    }
+    return { numeros, completo };
   }
 
   const normal = (s) => (s || "").normalize("NFD").replace(/[^\p{L}\p{N}]/gu, "").toLowerCase();
@@ -435,7 +481,7 @@
   function textoPuro(pergunta, d, fontes, t) {
     const linhas = fontes.map((f) => `[${f.n}] ${f.fonte === "transcricao" && !f.palestra_id ? f.espaco : limpo(f.titulo)}`
       + `${f.palestrantes && f.fonte !== "bio" ? ` (${f.palestrantes})` : ""} ${f.url_video || f.url}`);
-    return `${t.pergunta}: ${pergunta}\n\n${d.resposta}\n\n${t.fontes}:\n${linhas.join("\n")}`;
+    return `${t.pergunta}: ${pergunta}\n\n${d.resposta}${linhas.length ? `\n\n${t.fontes}:\n${linhas.join("\n")}` : ""}`;
   }
 
   function partilha(pergunta, d, fontes, t, palestraId) {
@@ -445,7 +491,7 @@
       .then(() => avisar(ok), () => avisar(t.naoCopiou));
     const link = `${location.origin}${location.pathname}?pergunta=${encodeURIComponent(pergunta)}`;
     // "Ouvir resposta" (ou "Ouvir resumo" no "Resumo com IA") pelo leitor do componente; sem voz no navegador, sem botão
-    const voz = d.sem_ia ? null : customElements.get("latinoware-catalogo")?.leitor?.(d.resposta, tem(d.idioma) ? d.idioma : lingua(), !!palestraId);
+    const voz = d.sem_ia ? null : customElements.get("latinoware-catalogo")?.leitor?.(d.resposta.replace(URL_VIDEO, (m) => t.linkNaPagina + m.slice(m.replace(/[.,;:!?]+$/, "").length)), tem(d.idioma) ? d.idioma : lingua(), !!palestraId);
     return el("div", { className: "partilha" }, ...(voz ? [voz] : []),
       el("button", { type: "button", textContent: t.copiar, onclick: () => copiar(textoPuro(pergunta, d, fontes, t), t.copiado) }),
       el("button", { type: "button", textContent: t.compartilhar, onclick: () => {
@@ -487,8 +533,8 @@
       if (atual >= 0) etapas.children[atual].textContent = t.etapa[nome](modelo || servidor.modelo);
       $("anuncio").textContent = t.etapa[nome]?.(modelo || servidor.modelo) || "";
     };
-    const texto = el("div", { className: "resposta" }), caixaFontes = el("div");
-    const bloco = el("div", { lang: t.html }, etapas, texto, caixaFontes);
+    const texto = el("div", { className: "resposta" });
+    const bloco = el("div", { lang: t.html }, etapas, texto);
     mostrar("", bloco);
     etapa("buscando");
     let status, fontes = [];
@@ -514,11 +560,8 @@
           if (ev === "etapa") etapa(x.etapa, x.modelo);
           else if (ev === "fontes") {
             fontes = Array.isArray(x.fontes) ? x.fontes.filter((f) => f && Number.isInteger(f.n)) : [];
+            // o painel só aparece no "fim", já filtrado pelas citações (senão piscaria: cheio e depois menor)
             if (!fontes.length) break;
-            await catalogo;
-            const tl = tem(x.idioma) ? T[x.idioma] : t;
-            bloco.lang = tl.html;
-            caixaFontes.replaceChildren(...listaFontes(fontes, tl));
           } else if (ev === "token") texto.append(x.t);
           else if (ev === "fim") d = x;
           else if (ev === "erro") { status = x.status; throw new Error(status); }
@@ -529,12 +572,14 @@
       if (!fontes.length || typeof d?.resposta !== "string") { mostrar(t.vazio, el("div", { className: "estado vazio", textContent: t.vazio })); return; }
       await catalogo;
       const tl = tem(d.idioma) ? T[d.idioma] : t;
+      // resposta escrita pela IA: o painel traz só as fontes citadas (numeração original); só busca (sem_ia) mostra todas
+      const cit = citados(d.resposta), exibidas = d.sem_ia || !cit.completo ? fontes : fontes.filter((f) => cit.numeros.has(f.n));
       mostrar(tl.pronto, el("div", { lang: tl.html },
         comCitacoes(d.resposta, new Set(fontes.map((f) => f.n)), tl),
         ...(d.reaproveitada ? [el("p", { className: "reaproveitada" },
           tl.reaproveitada(new Date(d.criado_em).toLocaleDateString(tl.html)),
           el("button", { type: "button", textContent: tl.gerarNovo, onclick: () => perguntar(pergunta, palestraId, true) }))] : []),
-        partilha(pergunta, d, fontes, tl, palestraId), ...listaFontes(fontes, tl)));
+        partilha(pergunta, d, exibidas, tl, palestraId), ...(exibidas.length ? listaFontes(exibidas, tl) : [])));
       $("saida").focus();
     } catch (err) {
       if (status === 404) { mostrar(t.vazio, el("div", { className: "estado vazio", textContent: t.vazio })); return; }  // palestra sem trechos
