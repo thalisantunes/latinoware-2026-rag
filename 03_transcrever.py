@@ -1,4 +1,4 @@
-"""Etapa 3: transcreve os áudios de data/audio/ com faster-whisper na GPU.
+"""Etapa 3: transcreve os áudios de data/audio/ com faster-whisper (GPU; WHISPER_DEVICE=cpu sem GPU).
 
 Saída: data/transcricoes/<id>.json com segmentos {inicio, fim, texto} em segundos.
 As lives misturam palestras em português, espanhol e inglês, então a detecção de idioma
@@ -14,6 +14,7 @@ from faster_whisper import BatchedInferencePipeline, WhisperModel
 
 DATA = Path(__file__).parent / "data"
 MODELO = os.environ.get("WHISPER_MODEL", "large-v3-turbo")
+DISPOSITIVO = (os.environ.get("WHISPER_DEVICE") or "cuda").strip().lower()  # "cpu" para estação sem GPU (int8, 16 threads)
 
 
 def main():
@@ -25,7 +26,9 @@ def main():
     if not pendentes:
         return
 
-    modelo = BatchedInferencePipeline(WhisperModel(MODELO, device="cuda", compute_type="float16"))
+    cpu = DISPOSITIVO == "cpu"
+    modelo = BatchedInferencePipeline(WhisperModel(MODELO, device=DISPOSITIVO, cpu_threads=16 if cpu else 0,
+                                                   compute_type="int8" if cpu else "float16"))
     for audio in pendentes:
         t0 = time.time()
         segmentos, info = modelo.transcribe(str(audio), batch_size=8, vad_filter=True,

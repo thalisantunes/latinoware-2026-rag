@@ -29,8 +29,8 @@ question ──05──> bge-m3 embedding ──> hybrid search on Trecho ──
 | Step | Script | What it does |
 |---|---|---|
 | 1 | `01_coletar_site.py` | Schedule (the site's SWGE plugin), each activity's details and speakers (WordPress API). Public data only; no e-mails or phone numbers. |
-| 2 | `02_baixar_audio.py` | Finds the "Latinoware 2026 - Espaço X - DD/10" lives (Itaipu Parquetec channel) and downloads audio only. |
-| 3 | `03_transcrever.py` | faster-whisper `large-v3-turbo` on the GPU, VAD, language detected per segment (lives mix pt/es/en). |
+| 2 | `02_baixar_audio.py` | Finds the "Latinoware 2026 - Espaço X - DD/10" lives (Itaipu Parquetec channel) and downloads audio only. A video passed on the command line may also come from the Latinoware channel, titled "Latinoware 2026   Espaço X   DD 10". |
+| 3 | `03_transcrever.py` | faster-whisper `large-v3-turbo` on the GPU (`WHISPER_DEVICE=cpu` without one: int8, 16 threads, much slower), VAD, language detected per segment (lives mix pt/es/en). |
 | 4 | `04_indexar.py` | Splits each live by talk using the schedule, builds ~350-word chunks with 60-word overlap, bge-m3 embeddings, loads into Weaviate. |
 | 5 | `05_api.py` | FastAPI `POST /ask` and the `web/index.html` page. |
 | 6 | `06_avaliar_busca.py` | Search recall on the reference questions (10 fixed in pt/en/es + checked extras); fails below 100%. |
@@ -48,7 +48,8 @@ Design decisions:
   `{"<video_id>": "2026-10-14T08:57:00-03:00"}`; without offset, Brasília time), YouTube's
   `release_timestamp`, or the start of the room's first activity that day (marked
   `alinhamento: estimado`; the page shows "horário estimado"). If a room has two lives on the
-  same day with no known start, their chunks get no talk assigned.
+  same day with no known start, their chunks get no talk assigned. `"<uid>": false` marks an activity
+  as not recorded: no video link and no transcript window; that slot's chunks stay "outside the schedule".
 - **Optional reranking** of the 32 candidates with `bge-reranker-v2-m3` on the GPU (~0.25 s): `uv sync --extra
   rerank` (always with `--extra rerank`, or a plain `uv sync` removes it) and `RERANK_LOCAL=BAAI/bge-reranker-v2-m3` in `.env`.
 - **Answer** with local `gemma4:12b-it-qat`, temperature 0.2, grounded only on the chunks, citing `[n]`
@@ -64,7 +65,8 @@ Design decisions:
 
 ### Requirements
 
-- Linux with an NVIDIA GPU with **≥ 12 GB VRAM** (tested on RTX 5060 Ti 16 GB, driver 595).
+- Linux with an NVIDIA GPU with **≥ 12 GB VRAM** (tested on RTX 5060 Ti 16 GB, driver 595). Without a GPU, set `WHISPER_DEVICE=cpu` for
+  transcription (int8, 16 threads, much slower).
   Whisper, embeddings and LLM run **in sequence**, not at the same time.
 - **CUDA 12 cuBLAS** (`libcublas.so.12`) visible on the system, required by faster-whisper's
   CTranslate2. Without it: `uv pip install nvidia-cublas-cu12` and point `LD_LIBRARY_PATH` to
@@ -252,8 +254,8 @@ pregunta ──05──> embedding bge-m3 ──> búsqueda híbrida en Trecho �
 | Paso | Script | Qué hace |
 |---|---|---|
 | 1 | `01_coletar_site.py` | Programación (plugin SWGE del sitio), detalle de cada actividad y ponentes (API de WordPress). Solo datos públicos; sin correos ni teléfonos. |
-| 2 | `02_baixar_audio.py` | Encuentra las lives "Latinoware 2026 - Espaço X - DD/10" (canal Itaipu Parquetec) y descarga solo el audio. |
-| 3 | `03_transcrever.py` | faster-whisper `large-v3-turbo` en la GPU, VAD, idioma detectado por segmento (las lives mezclan pt/es/en). |
+| 2 | `02_baixar_audio.py` | Encuentra las lives "Latinoware 2026 - Espaço X - DD/10" (canal Itaipu Parquetec) y descarga solo el audio. Un video pasado en la línea de comandos puede venir también del canal Latinoware, con título "Latinoware 2026   Espaço X   DD 10". |
+| 3 | `03_transcrever.py` | faster-whisper `large-v3-turbo` en la GPU (`WHISPER_DEVICE=cpu` sin ella: int8, 16 hilos, mucho más lento), VAD, idioma detectado por segmento (las lives mezclan pt/es/en). |
 | 4 | `04_indexar.py` | Corta cada live por charla según la programación, genera fragmentos de ~350 palabras con solapamiento de 60, embeddings bge-m3 y los carga en Weaviate. |
 | 5 | `05_api.py` | API FastAPI `POST /ask` y la página `web/index.html`. |
 | 6 | `06_avaliar_busca.py` | Recall de la búsqueda con las preguntas de referencia (10 fijas en pt/en/es + extras revisadas); falla por debajo de 100%. |
@@ -272,7 +274,8 @@ Decisiones:
   vale la de Brasilia), `release_timestamp` de YouTube, o el inicio de la primera actividad del
   espacio en el día (marcado `alinhamento: estimado`; la página muestra "horário estimado"). Si
   un espacio tiene dos lives el mismo día sin inicio conocido, sus fragmentos quedan sin charla
-  asignada.
+  asignada. `"<uid>": false` marca una actividad sin grabación: sin enlace de video ni ventana de
+  transcripción; los fragmentos de ese horario quedan "fuera de la grade".
 - **Reordenamiento opcional** de los 32 candidatos con `bge-reranker-v2-m3` en la GPU (~0,25 s): `uv sync
   --extra rerank` (siempre con `--extra rerank`, o un `uv sync` simple lo quita) y `RERANK_LOCAL=BAAI/bge-reranker-v2-m3` en el `.env`.
 - **Respuesta** con `gemma4:12b-it-qat` local (elegido por benchmark frente a qwen3:14b, qwen3.5 y
@@ -289,7 +292,8 @@ Decisiones:
 
 ### Requisitos
 
-- Linux con GPU NVIDIA de **≥ 12 GB de VRAM** (probado en RTX 5060 Ti 16 GB, driver 595).
+- Linux con GPU NVIDIA de **≥ 12 GB de VRAM** (probado en RTX 5060 Ti 16 GB, driver 595). Sin GPU, usa `WHISPER_DEVICE=cpu` para
+  transcribir (int8, 16 hilos, mucho más lento).
   Whisper, embeddings y LLM corren **en secuencia**, no a la vez.
 - **cuBLAS de CUDA 12** (`libcublas.so.12`) visible en el sistema, exigido por el CTranslate2
   de faster-whisper. Sin él: `uv pip install nvidia-cublas-cu12` y apunta `LD_LIBRARY_PATH` a
@@ -479,8 +483,8 @@ pergunta ──05──> embedding bge-m3 ──> busca híbrida em Trecho ─�
 | Etapa | Script | O que faz |
 |---|---|---|
 | 1 | `01_coletar_site.py` | Grade (plugin SWGE do site), detalhe de cada atividade e palestrantes (API do WordPress). Só dados públicos; nada de e-mail ou telefone. |
-| 2 | `02_baixar_audio.py` | Acha as lives "Latinoware 2026 - Espaço X - DD/10" (canal Itaipu Parquetec) e baixa só o áudio. |
-| 3 | `03_transcrever.py` | faster-whisper `large-v3-turbo` na GPU, VAD, idioma detectado por segmento (as lives misturam pt/es/en). |
+| 2 | `02_baixar_audio.py` | Acha as lives "Latinoware 2026 - Espaço X - DD/10" (canal Itaipu Parquetec) e baixa só o áudio. Um vídeo passado na linha de comando pode vir também do canal Latinoware, com título "Latinoware 2026   Espaço X   DD 10". |
+| 3 | `03_transcrever.py` | faster-whisper `large-v3-turbo` na GPU (`WHISPER_DEVICE=cpu` sem ela: int8, 16 threads, bem mais lento), VAD, idioma detectado por segmento (as lives misturam pt/es/en). |
 | 4 | `04_indexar.py` | Corta cada live por palestra usando a grade, gera pedaços de ~350 palavras com sobreposição de 60, embeddings bge-m3 e carrega no Weaviate. |
 | 5 | `05_api.py` | API FastAPI `POST /ask` e a página `web/index.html`. |
 | 6 | `06_avaliar_busca.py` | Recall da busca com as perguntas-gabarito (10 fixas em pt/en/es + extras conferidas); falha abaixo de 100%. |
@@ -498,7 +502,8 @@ Decisões:
   (manual, `{"<video_id>": "2026-10-14T08:57:00-03:00"}`; sem fuso, vale o de Brasília),
   `release_timestamp` do YouTube, ou o início da primeira atividade do espaço no dia (marcado
   `alinhamento: estimado`, e a página mostra "horário estimado"). Se o espaço tem duas lives no
-  mesmo dia sem início conhecido, os trechos ficam sem palestra atribuída.
+  mesmo dia sem início conhecido, os trechos ficam sem palestra atribuída. `"<uid>": false` marca uma atividade sem gravação: sem
+  link de vídeo e sem faixa na transcrição; os trechos daquele horário ficam "fora da grade".
 - **Reordenação opcional** dos 32 candidatos com `bge-reranker-v2-m3` na GPU (~0,25 s): `uv sync --extra
   rerank` (sempre com `--extra rerank`, senão um `uv sync` simples o remove) e `RERANK_LOCAL=BAAI/bge-reranker-v2-m3` no `.env`.
 - **Resposta** com `gemma4:12b-it-qat` local, temperatura 0,2, só com base nos trechos, citando `[n]`
@@ -514,7 +519,8 @@ Decisões:
 
 ### Requisitos
 
-- Linux com GPU NVIDIA de **≥ 12 GB de VRAM** (testado em RTX 5060 Ti 16 GB, driver 595).
+- Linux com GPU NVIDIA de **≥ 12 GB de VRAM** (testado em RTX 5060 Ti 16 GB, driver 595). Sem GPU, use `WHISPER_DEVICE=cpu` na
+  transcrição (int8, 16 threads, bem mais lento).
   Whisper, embeddings e LLM rodam **em sequência**, não ao mesmo tempo.
 - **cuBLAS do CUDA 12** (`libcublas.so.12`) visível no sistema, exigido pelo CTranslate2 do
   faster-whisper. Sem ele: `uv pip install nvidia-cublas-cu12` e aponte `LD_LIBRARY_PATH` para

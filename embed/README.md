@@ -28,7 +28,7 @@ jsDelivr also serves a minified copy if you replace `.js` with `.min.js`.
 | `perguntar` | no | shows "AI summary" and fires the `perguntar` event (bubbles, composed, cancelable; `detail.pergunta`, `palestra_id`, `uid`, `titulo`, `palestrantes`) for the host page; with `api`, calling `preventDefault()` turns off the built-in answer box |
 | `ouvir` | no | on by default; `ouvir="false"` removes "Listen" from the answers. Reads the answer aloud with the browser's own voice (Web Speech API, no external service), without the `[n]` markers, in the answer language, with pause/resume/stop and speed 0.8–1.5; never autoplays, and the button is absent if the browser has no speech synthesis |
 
-The API runs on a home GPU with no uptime guarantee; when it is down, the component says so and hides the AI
+The API runs on a home workstation with no uptime guarantee; when it is down, the component says so and hides the AI
 buttons, and the catalogue keeps working. Leave `api` out if the page must not depend on it.
 Filters are kept in the URL with the `lw_` prefix (`lw_data`, `lw_espaco`, `lw_busca`…), and `#palestra-<uid>`
 opens a specific talk.
@@ -76,7 +76,7 @@ jsDelivr también sirve una copia minificada si cambias `.js` por `.min.js`.
 | `perguntar` | no | muestra "Resumen con IA" y dispara el evento `perguntar` (bubbles, composed, cancelable; `detail.pergunta`, `palestra_id`, `uid`, `titulo`, `palestrantes`) para la página; con `api`, `preventDefault()` desactiva la caja de respuesta propia |
 | `ouvir` | no | activado por defecto; `ouvir="false"` quita "Escuchar" de las respuestas. Lee la respuesta en voz alta con la voz del navegador (Web Speech API, sin servicio externo), sin las marcas `[n]`, en el idioma de la respuesta, con pausar/continuar/detener y velocidad 0,8–1,5; nunca empieza solo, y el botón no aparece si el navegador no tiene síntesis de voz |
 
-La API corre en una GPU doméstica, sin garantía de disponibilidad; cuando cae, el componente lo avisa y oculta
+La API corre en una estación doméstica, sin garantía de disponibilidad; cuando cae, el componente lo avisa y oculta
 los botones de IA, y el catálogo sigue funcionando. Omite `api` si la página no puede depender de ella. Los filtros quedan en la URL con el prefijo `lw_` (`lw_data`, `lw_espaco`, `lw_busca`…) y
 `#palestra-<uid>` abre una charla.
 
@@ -123,7 +123,7 @@ O jsDelivr também serve uma cópia minificada trocando `.js` por `.min.js`.
 | `perguntar` | não | mostra "Resumo com IA" e dispara o evento `perguntar` (bubbles, composed, cancelável; `detail.pergunta`, `palestra_id`, `uid`, `titulo`, `palestrantes`) para a página; com `api`, `preventDefault()` desliga a caixa de resposta própria |
 | `ouvir` | não | ligado por padrão; `ouvir="false"` tira o "Ouvir" das respostas. Lê a resposta em voz alta com a voz do próprio navegador (Web Speech API, sem serviço externo), sem as marcações `[n]`, na língua da resposta, com pausar/continuar/parar e velocidade 0,8–1,5; nunca começa sozinho, e o botão não aparece se o navegador não tiver síntese de voz |
 
-A API roda numa GPU doméstica, sem garantia de disponibilidade; quando ela cai, o componente avisa e esconde os
+A API roda numa estação doméstica, sem garantia de disponibilidade; quando ela cai, o componente avisa e esconde os
 botões de IA, e o catálogo continua funcionando. Deixe `api` de fora se a página não puder depender dela. Os filtros ficam na URL com prefixo `lw_` (`lw_data`, `lw_espaco`, `lw_busca`…) e
 `#palestra-<uid>` abre uma palestra.
 

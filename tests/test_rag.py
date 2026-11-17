@@ -171,6 +171,36 @@ def test_inicio_lido_e_manual(tmp_path, monkeypatch):
     assert indexar.alinhar_palestras(palestras, videos, {"p@brasil": 3700})["p@brasil"]["t_inicio"] == 3700
 
 
+def test_sem_gravacao(tmp_path, monkeypatch):
+    # "<uid>": false: a atividade não ganha vídeo nem faixa; sem a chave, tudo como antes
+    monkeypatch.setattr(indexar, "DATA", tmp_path)
+    (tmp_path / "transcricoes").mkdir()
+    palestras = [{"id": i, "titulo": i, "palestrantes": [], "espaco": "Espaço Brasil",
+                  "inicio": f"2026-10-14T{h}:00:00-03:00", "fim": f"2026-10-14T{h}:50:00-03:00"}
+                 for i, h in (("a", "10"), ("b", "11"))]
+    videos = [{"id": "abc", "titulo": "t", "espaco": "Espaço Brasil", "data": "2026-10-14", "duracao": 4 * 3600,
+               "inicio_live": 1791979200}]
+    segs = [{"inicio": t, "fim": t + 5, "texto": "palavra " * 20} for t in range(0, 4 * 3600, 5)]
+    (tmp_path / "transcricoes" / "abc.json").write_text(json.dumps({"segmentos": segs}))
+    assert set(indexar.alinhar_palestras(palestras, videos, {}, inicios=False)) == {"a@brasil", "b@brasil"}
+    assert {t["palestra_id"] for t in indexar.trechos_de_transcricao(palestras, videos, {})[0]} >= {"a", "b"}
+    manual = {"b@brasil": False}
+    assert set(indexar.alinhar_palestras(palestras, videos, manual)) == {"a@brasil"}
+    assert "b" not in {t["palestra_id"] for t in indexar.trechos_de_transcricao(palestras, videos, manual)[0]}
+
+
+def test_titulo_do_canal_novo_em_unicode_decomposto():
+    # o canal Latinoware manda o "ç" decomposto (NFD); 02_baixar_audio.py normaliza para NFC antes do regex
+    import unicodedata
+    d = modulo("02_baixar_audio.py")
+    novo = unicodedata.normalize("NFD", "Latinoware 2026   Espaço Brasil   16 10")
+    assert not d.TITULO_NOVO.search(novo)
+    m = d.TITULO_NOVO.search(unicodedata.normalize("NFC", novo))
+    assert (m["espaco"], m["dia"]) == ("Brasil", "16")
+    antigo = d.TITULO.search("Latinoware 2026 - Espaço Bolívia - 14/10")
+    assert (antigo["espaco"], antigo["dia"]) == ("Bolívia", "14")
+
+
 def test_primeira_fala():
     sinc = modulo("08_sincronizar_inicio.py")
     segs = [{"inicio": 100, "fim": 130, "texto": "x"}, {"inicio": 400, "fim": 420, "texto": "y"}]
