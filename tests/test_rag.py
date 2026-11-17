@@ -7,6 +7,7 @@ import os
 import re
 from collections import Counter
 from pathlib import Path
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -474,6 +475,7 @@ class FluxoClaude:
     async def get_final_message(self):
         class Final:
             stop_reason = self.stop_reason
+            usage = SimpleNamespace(input_tokens=5, cache_read_input_tokens=100, cache_creation_input_tokens=0, output_tokens=7)
         return Final
 
 
@@ -497,7 +499,7 @@ def test_anthropic_entrega_o_texto(monkeypatch):
     claude_ligado(monkeypatch, fluxo)
     assert asyncio.run(api.gerar("sistema", "usuario")) == "Olá, mundo [1]."
     kw = fluxo.chamadas[0]
-    assert kw["model"] == api.ANTHROPIC_MODEL and kw["system"] == "sistema"
+    assert kw["model"] == api.ANTHROPIC_MODEL and kw["system"][-1] == {"type": "text", "text": "sistema"}
     assert kw["messages"] == [{"role": "user", "content": "usuario"}]
     assert kw["output_config"] == {"effort": api.ANTHROPIC_EFFORT}
     assert kw["max_tokens"] > api.MAX_TOKENS  # folga para o thinking
@@ -624,7 +626,7 @@ def test_anthropic_corpo_da_requisicao_com_sdk_real(monkeypatch):
     claude_ligado(monkeypatch, cliente)
     assert asyncio.run(api.gerar("sistema", "usuario")) == "Resposta [1]."
     corpo = visto[0]
-    assert corpo["model"] == api.ANTHROPIC_MODEL and corpo["system"] == "sistema" and corpo["stream"] is True
+    assert corpo["model"] == api.ANTHROPIC_MODEL and corpo["system"][-1]["text"] == "sistema" and corpo["stream"] is True
     assert corpo["output_config"] == {"effort": api.ANTHROPIC_EFFORT}
     assert corpo["max_tokens"] == api.MAX_TOKENS_ANTHROPIC > api.MAX_TOKENS
     assert corpo["messages"] == [{"role": "user", "content": "usuario"}]
@@ -661,3 +663,206 @@ def test_modelo_segue_o_provedor(monkeypatch):
     assert modulo("05_api.py").LLM_MODEL == "local-teste"
     monkeypatch.setenv("ANTHROPIC_API_KEY", "chave-de-teste")
     assert modulo("05_api.py").LLM_MODEL == "claude-teste"
+
+
+def corpos_da_anthropic(monkeypatch, perguntas):
+    """Corpos enviados à Anthropic (SDK real, transporte simulado) para cada par (sistema, usuario)."""
+    import anthropic
+    import httpx2
+    visto = []
+
+    def atende(req):
+        visto.append(json.loads(req.content))
+        return httpx2.Response(200, headers={"content-type": "text/event-stream"}, content=sse_claude("ok"))
+
+    cliente = anthropic.AsyncAnthropic(api_key="chave-de-teste", max_retries=0,
+                                       http_client=anthropic.DefaultAsyncHttpxClient(transport=httpx2.MockTransport(atende)))
+    claude_ligado(monkeypatch, cliente)
+    for sistema, usuario in perguntas:
+        asyncio.run(api.gerar(sistema, usuario))
+    return visto
+
+
+def test_programacao_vai_em_system_com_cache_e_igual_entre_perguntas(monkeypatch):
+    a, b = corpos_da_anthropic(monkeypatch, [("instrucoes pt", "Trechos: x\n\nPergunta: um"),
+                                             ("instrucoes en", "Trechos: y\n\nPergunta: dois")])
+    bloco = a["system"][0]
+    assert bloco["cache_control"] == {"type": "ephemeral"}
+    assert bloco["text"].startswith("PROGRAMAÇÃO COMPLETA") and 'Must to Pay' in bloco["text"]  # atividade conhecida
+    assert "Porto do Credenciamento" not in bloco["text"]  # organização fica de fora
+    assert json.dumps(a["system"][0]) == json.dumps(b["system"][0])  # prefixo idêntico byte a byte
+    assert [x["text"] for x in a["system"][1:]] == ["instrucoes pt"] and "cache_control" not in a["system"][1]
+    assert "PROGRAMAÇÃO" not in json.dumps(a["messages"])  # os trechos e a pergunta ficam na mensagem do usuário
+    assert not {"temperature", "top_p", "top_k", "thinking"} & a.keys()
+
+
+def test_programacao_marca_gravacao_e_junta_keynote_repetida():
+    linhas = api.programacao().splitlines()
+    assert sum(l.endswith(" | gravada") for l in linhas) > 20
+    keynote = [l for l in linhas if "maddog" in l and "Abertura Oficial" in l]
+    assert len(keynote) == 1 and "(e mais" in keynote[0]  # a keynote repetida em todas as salas é uma linha
+
+
+def test_usage_da_anthropic_vai_para_o_log(monkeypatch, caplog):
+    import logging
+    claude_ligado(monkeypatch, FluxoClaude(["ok"]))
+    with caplog.at_level(logging.INFO, logger="uvicorn.error"):
+        asyncio.run(api.gerar("sistema", "Quem falou de Linux? (pergunta secreta)"))
+    msg = next(r.getMessage() for r in caplog.records if "tokens" in r.getMessage())
+    assert "entrada=5" in msg and "cache_lido=100" in msg and "cache_criado=0" in msg and "saida=7" in msg
+    assert "secreta" not in caplog.text
+
+
+@pytest.mark.parametrize("provedor", ["openai", "ollama"])
+def test_outros_provedores_nao_recebem_a_programacao(monkeypatch, provedor):
+    enviados = []
+
+    class R:
+        status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+        async def aiter_lines(self):
+            yield 'data: {"choices": [{"delta": {"content": "ok"}}]}' if provedor == "openai" else '{"message": {"content": "ok"}}'
+
+    class Http:
+        def stream(self, metodo, url, **k):
+            enviados.append(json.dumps(k["json"]))
+            class Ctx:
+                async def __aenter__(self):
+                    return R()
+
+                async def __aexit__(self, *_):
+                    return False
+            return Ctx()
+
+    monkeypatch.setattr(api, "ANTHROPIC_API_KEY", "")
+    monkeypatch.setattr(api, "LLM_API_KEY", "chave" if provedor == "openai" else "")
+    monkeypatch.setattr(api.app.state, "http", Http(), raising=False)
+    assert asyncio.run(api.gerar("sistema", "usuario")) == "ok"
+    assert enviados and "PROGRAMAÇÃO" not in enviados[0] and "Must to Pay" not in enviados[0]
+
+
+def test_historico_antigo_do_claude_nao_e_reaproveitado(monkeypatch):
+    class Cond(frozenset):
+        def __and__(self, outra):
+            return Cond(self | outra)
+
+    class Filtro:  # registra (campo, valor) de cada igualdade em vez de montar o filtro do Weaviate
+        @staticmethod
+        def by_property(campo):
+            return SimpleNamespace(equal=lambda valor: Cond({(campo, valor)}))
+
+    monkeypatch.setattr(api, "Filter", Filtro)
+    monkeypatch.setattr(api, "versao_indice", lambda: "v")
+    q = api.Pergunta(pergunta="Quais palestras sobre IA?")
+    monkeypatch.setattr(api, "ANTHROPIC_API_KEY", "chave-de-teste")
+    monkeypatch.setattr(api, "LLM_MODEL", "claude-teste")
+    novo = api.filtro_igual(q, "pt")
+    chave = api.modelo_do_historico()
+    assert chave.startswith(f"claude-teste+{api.VERSAO_PROMPT}-") and chave != f"claude-teste+{api.VERSAO_PROMPT}-sem-grade"
+    assert ("modelo", chave) in novo
+    assert ("modelo", "claude-teste") not in novo  # respostas antigas foram gravadas só com o nome do modelo
+    monkeypatch.setattr(api, "ANTHROPIC_API_KEY", "")
+    monkeypatch.setattr(api, "LLM_MODEL", "local-teste")
+    assert ("modelo", "local-teste") in api.filtro_igual(q, "pt")  # os outros provedores mantêm o histórico
+
+
+def test_instrucoes_so_no_caminho_da_anthropic():
+    texto = api.INSTRUCOES_ANTHROPIC
+    for exigido in ("panorama", "[n]", "título, palestrante, espaço, dia e hora", "nunca peça ao visitante a grade",
+                    "N itens", "máximo 15 itens", "só pelo título"):
+        assert exigido.lower() in texto.lower()
+    for proibida in ("trecho", "contexto", "índice"):  # a instrução não pode ensinar o modelo a dizer isso ao visitante
+        assert proibida not in texto.lower()
+    assert all("programação" not in t for t in api.INSTRUCOES.values())  # os modelos locais não mudam
+
+
+def catalogo_falso(tmp_path, monkeypatch, palestras):
+    arq = tmp_path / "catalogo.json"
+    arq.write_text(json.dumps({"palestras": palestras}))
+    monkeypatch.setattr(api, "CATALOGO", arq)
+    monkeypatch.setitem(api._grade, "mtime", None)  # restaurado no fim do teste
+    monkeypatch.setitem(api._grade, "texto", "")
+    return arq
+
+
+def atividade(titulo, hora="10:00", espaco="Espaço A", nomes=("Ana",), tipo="LECTURE", **extra):
+    return {"titulo": titulo, "data": "2026-10-15", "hora_inicio": hora, "espaco": espaco, "trilha": "T", "tipo": tipo,
+            "palestrantes": [{"nome": n} for n in nomes], "url_video": None, "url_video_palestra": None} | extra
+
+
+def test_programacao_remonta_quando_o_catalogo_muda(tmp_path, monkeypatch):
+    import os
+    monkeypatch.setattr(api, "ANTHROPIC_API_KEY", "chave-de-teste")
+    arq = catalogo_falso(tmp_path, monkeypatch, [atividade("Primeira")])
+    antes, chave_antes = api.programacao(), api.modelo_do_historico()
+    assert "Primeira" in antes and api.programacao() == antes
+    arq.write_text(json.dumps({"palestras": [atividade("Primeira", espaco="Espaço B")]}))  # sala mudou
+    os.utime(arq, ns=(1, 1))  # mtime diferente sem depender do relógio
+    depois = api.programacao()
+    assert depois != antes and "| B |" in depois
+    assert api.modelo_do_historico() != chave_antes  # grade nova, histórico novo
+
+
+def test_sem_grade_usa_instrucoes_antigas_e_nao_manda_bloco(tmp_path, monkeypatch):
+    monkeypatch.setattr(api, "ANTHROPIC_API_KEY", "chave-de-teste")
+    catalogo_falso(tmp_path, monkeypatch, [])  # grade vazia
+    assert api.programacao() == "" and api._grade["texto"] == ""  # vazia não é guardada
+    assert api.modelo_do_historico().endswith("-sem-grade")
+    trecho = {"fonte": "resumo", "palestra_titulo": "P", "palestrantes": "Ana", "texto": "texto", "espaco": "A", "inicio": "2026-10-15T10:00",
+              "url": "u", "alinhamento": None, "palestra_id": "1", "video_id": None, "inicio_video_s": 0}
+
+    async def embed(_):
+        return [0.0]
+
+    monkeypatch.setattr(api, "embed", embed)
+    monkeypatch.setattr(api, "da_palestra", lambda *_: [trecho])
+    q = api.Pergunta(pergunta="Quais palestras de IA?", idioma="pt", novo=True)
+    monkeypatch.setattr(api, "candidatos", lambda *_: [trecho])
+    monkeypatch.setattr(api.app.state, "wv", SimpleNamespace(collections=SimpleNamespace(get=lambda _: None)), raising=False)
+    monkeypatch.setattr(api, "limitar", lambda t, k: t)
+    _, (_, (sistema, _), _, _) = asyncio.run(api.preparar(q))
+    assert sistema == api.INSTRUCOES["pt"]
+    corpo, = corpos_da_anthropic(monkeypatch, [(sistema, "usuario")])
+    assert corpo["system"] == sistema  # sem bloco da programação
+    catalogo_falso(tmp_path, monkeypatch, [atividade("Com grade")])
+    _, (_, (sistema, _), _, _) = asyncio.run(api.preparar(q))
+    assert sistema == api.INSTRUCOES_ANTHROPIC
+
+
+def test_registro_malformado_nao_derruba_a_montagem():
+    ruim = [atividade(None, nomes=()) | {"palestrantes": None, "data": None, "hora_inicio": None, "trilha": None},
+            atividade("Boa", palestrantes=[{"nome": None}, {}]), "lixo"]
+    texto = api.montar_programacao(ruim)
+    assert "Boa" in texto
+
+
+def test_atividades_diferentes_no_mesmo_horario_nao_se_fundem():
+    texto = api.montar_programacao([atividade("Mesmo título", espaco="Espaço A", nomes=("Ana",)),
+                                    atividade("Mesmo título", espaco="Espaço B", nomes=("Bia",)),
+                                    atividade("Keynote", espaco="Espaço A", nomes=("Cid",), tipo="KEYNOTE"),
+                                    atividade("Keynote", espaco="Espaço B", nomes=("Cid",), tipo="KEYNOTE")])
+    assert texto.count("Mesmo título") == 2 and texto.count("Keynote") == 1 and "(e mais 1 salas)" in texto
+
+
+def test_frequentes_filtra_pelo_modelo_atual(monkeypatch):
+    campos = []
+
+    class Cond(frozenset):
+        def __and__(self, o):
+            return Cond(self | o)
+
+    class Filtro:
+        @staticmethod
+        def by_property(campo):
+            campos.append(campo)
+            return SimpleNamespace(equal=lambda v: Cond({(campo, v)}), greater_or_equal=lambda v: Cond({(campo, v)}))
+
+    col = SimpleNamespace(query=SimpleNamespace(fetch_objects=lambda **k: SimpleNamespace(objects=[])))
+    monkeypatch.setattr(api, "Filter", Filtro)
+    monkeypatch.setattr(api, "versao_indice", lambda: "v")
+    monkeypatch.setattr(api.app.state, "wv", SimpleNamespace(collections=SimpleNamespace(get=lambda _: col)), raising=False)
+    api.frequentes("pt")
+    assert "modelo" in campos

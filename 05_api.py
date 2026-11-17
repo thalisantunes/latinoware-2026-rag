@@ -10,6 +10,7 @@ usa o Claude pela API da Anthropic (ANTHROPIC_MODEL, ANTHROPIC_EFFORT).
 """
 
 import asyncio
+import hashlib
 import json
 import logging
 import math
@@ -88,13 +89,17 @@ def versao_indice():
 CORS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "https://ilove.the.br,https://www.ilove.the.br,https://rede-cidades.pages.dev,https://latinoware.org,https://www.latinoware.org,http://localhost:8765").split(",")]
 MAX_TOKENS = int(os.environ.get("LLM_MAX_TOKENS", 800))
 # no Claude o raciocínio (thinking adaptativo) conta no max_tokens: a folga evita cortar a resposta antes do texto
-MAX_TOKENS_ANTHROPIC = MAX_TOKENS + 3200
-TETO_ANTHROPIC = 45  # segundos para a geração inteira; a página desiste em 90
+MAX_TOKENS_ANTHROPIC = MAX_TOKENS + 5200  # 6000: listas longas estouravam 4000 e a resposta era descartada depois de transmitida
+TETO_ANTHROPIC = 45  # segundos para a geração inteira (~160 tokens/s medidos: 6000 tokens levam ~38 s); a página desiste em 90
 # sem limite, uma palestra longa e bem transcrita ocupava 7 das 8 fontes
 MAX_POR_PALESTRA = int(os.environ.get("MAX_POR_PALESTRA", 2))
 # a GPU atende poucas gerações por vez; acima disso a API responde 429 em vez de enfileirar
 GERACOES = asyncio.Semaphore(int(os.environ.get("MAX_CONCORRENCIA", 2)))
 log = logging.getLogger("uvicorn.error")
+CATALOGO = Path(__file__).parent / "web" / "catalogo.json"  # a grade (07_exportar_catalogo.py), versionada e servida pela própria API
+# a versão entra na chave do histórico das respostas do Claude: subir ao mudar INSTRUCOES_ANTHROPIC ou o formato da programação
+VERSAO_PROMPT = "p2"
+TIPOS = {"LECTURE": "palestra", "KEYNOTE": "keynote", "MINI_COURSE": "minicurso", "HAND_ONS_SESSION": "hands-on", "OTHER": "outro"}
 
 INSTRUCOES = {
     "pt": ("Você responde perguntas sobre a Latinoware 2026 (Foz do Iguaçu, 14 a 16 de outubro "
@@ -131,6 +136,23 @@ RESUMO = {
            "párrafo de 3 a 6 frases y luego 3 puntos principales en lista. Cita las fuentes por número, p. ej. [1], [3]. Si solo "
            "hay el resumen del sitio, di que la charla no tiene grabación transcrita y resume lo que dice el sitio."),
 }
+# só no caminho da Anthropic (os modelos locais não têm contexto para a programação); a programação vai antes, em outro bloco de system
+INSTRUCOES_ANTHROPIC = (
+    "Você é o assistente da Latinoware 2026 (Foz do Iguaçu, 14 a 16 de outubro de 2026) e responde perguntas de "
+    "visitantes sobre as palestras. Responda no idioma indicado no fim da mensagem. Você tem duas fontes: a "
+    "programação completa do evento (acima) e as fontes numeradas da mensagem, tiradas dos resumos e das "
+    "gravações. Use a programação para perguntas de panorama (listar, recomendar, comparar, \"quais palestras sobre "
+    "X\") e para localizar atividades: título, palestrante, espaço, dia e hora. Afirmações sobre o que foi dito "
+    "numa palestra só podem vir das fontes numeradas e devem citar [n]. Não descreva o conteúdo de uma palestra só "
+    "pelo título: descreva só o que as fontes numeradas dizem, sem comentar com o visitante que faltam fontes. "
+    "Ao recomendar pela programação, dê título, "
+    "palestrante, espaço, dia e hora, e diga que a escolha se baseou no título e na trilha. Se pedirem N itens e a "
+    "programação tiver N adequados, entregue N; listas têm no máximo 15 itens: se pedirem mais, entregue 15 e diga "
+    "que a programação completa está na página. Nunca peça ao visitante a grade nem material adicional. Se nada na "
+    "programação nem nas fontes numeradas responde, diga que não encontrou essa informação. Se a gravação que "
+    "responde não identifica o palestrante, diga isso, informe o espaço e o dia e sugira ouvir a gravação a partir "
+    "do instante que aparece no cabeçalho da fonte (escreva o horário, por exemplo 3:54:33). Ao falar com o "
+    "visitante, use as palavras palestras, gravações e programação.")
 # lembrete no fim do prompt: com a pergunta em outra língua, só a instrução de sistema não basta
 LEMBRETE = {"pt": "Responda em português do Brasil.", "en": "Answer in English.",
             "es": "Responde en español."}
@@ -159,6 +181,57 @@ def detectar_idioma(texto):
     return melhor if pontos[melhor] > 0 else "pt"
 
 
+def montar_programacao(todas):
+    """A grade inteira em uma linha por atividade, sem resumos; ordem fixa e nada que varie por pedido, pois é o
+    prefixo cacheado do prompt. Registro malformado é pulado; sem nenhuma atividade devolve ""."""
+    ativas = []
+    for p in todas:
+        try:
+            if p.get("tipo") == "ORGANIZATION":
+                continue
+            ativas.append({"data": p.get("data") or "", "hora": p.get("hora_inicio") or "", "espaco": p.get("espaco") or "",
+                           "trilha": p.get("trilha") or "", "tipo": p.get("tipo") or "", "titulo": p.get("titulo") or "",
+                           "nomes": [s.get("nome") or "" for s in p.get("palestrantes") or []],
+                           "gravada": bool(p.get("url_video") or p.get("url_video_palestra"))})
+        except Exception:
+            log.warning("programação: registro ignorado (malformado)")
+    grupos = {}  # keynotes são transmitidas em várias salas: uma linha só (mesmo título, dia, hora, tipo e palestrantes)
+    for p in sorted(ativas, key=lambda p: (p["data"], p["hora"], p["espaco"], p["titulo"])):
+        chave = (re.sub(r"\W", "", p["titulo"].lower()), p["data"], p["hora"], p["tipo"], tuple(sorted(p["nomes"])))
+        grupos.setdefault(chave, []).append(p)
+    linhas = []
+    for g in grupos.values():
+        p = next((p for p in g if p["gravada"]), g[0])
+        sala = p["espaco"].removeprefix("Espaço ") + (f" (e mais {len(g) - 1} salas)" if len(g) > 1 else "")
+        linhas.append(" | ".join([f"{p['data'][8:]}/{p['data'][5:7]} {p['hora']}", sala, p["trilha"],
+                                  TIPOS.get(p["tipo"], p["tipo"].lower()), p["titulo"], ", ".join(p["nomes"]) or "-"])
+                      + (" | gravada" if p["gravada"] else ""))
+    if not linhas:
+        return ""
+    return ("PROGRAMAÇÃO COMPLETA DA LATINOWARE 2026\nUma atividade por linha: dia/mês hora | espaço | trilha | tipo | "
+            "título | palestrantes | \"gravada\" quando há gravação.\n\n" + "\n".join(linhas))
+
+
+_grade = {"mtime": None, "texto": ""}
+
+
+def programacao():
+    """Texto da grade, remontado quando web/catalogo.json muda em disco (make catalogo roda sem reiniciar a API).
+    Grade ausente, ilegível ou vazia devolve "" e não é guardada: a API segue sem ela, com as instruções dos
+    outros provedores, e tenta de novo na pergunta seguinte."""
+    try:
+        mtime = CATALOGO.stat().st_mtime_ns
+        if _grade["mtime"] == mtime:
+            return _grade["texto"]
+        texto = montar_programacao(json.loads(CATALOGO.read_text())["palestras"])
+    except Exception:
+        log.exception("programação indisponível; o Claude segue só com os trechos")
+        return ""
+    if texto:
+        _grade.update(mtime=mtime, texto=texto)
+    return texto
+
+
 class Pergunta(BaseModel):
     pergunta: str = Field(min_length=3, max_length=1000)
     idioma: str | None = Field(default=None, pattern="^(pt|en|es)$")
@@ -175,6 +248,9 @@ async def lifespan(app):
     app.state.http = httpx.AsyncClient(timeout=180)
     if RERANK_LOCAL:  # carrega na subida, não na primeira pergunta (download de ~2 GB na 1ª vez)
         app.state.carga_reranker = asyncio.create_task(asyncio.to_thread(reranker_local))  # referência evita o GC
+    if ANTHROPIC_API_KEY:  # monta e mede na subida, não na primeira pergunta
+        grade = programacao()
+        log.info("programação para o Claude: %d caracteres, %d linhas", len(grade), grade.count("\n") - 2)
     try:  # sem histórico a API segue respondendo, só não reaproveita
         preparar_historico(app.state.wv)
     except Exception:
@@ -229,6 +305,10 @@ async def pedacos_anthropic(sistema, usuario):
     if not hasattr(app.state, "claude"):
         # 1 nova tentativa (padrão: 2); o teto total de TETO_ANTHROPIC abaixo cobre tentativas e espera, e cabe nos 90 s da página
         app.state.claude = anthropic.AsyncAnthropic(timeout=60, max_retries=1)
+    # a programação (estável) é o bloco cacheado; as instruções, que mudam com o idioma, vêm depois do ponto de cache
+    grade = programacao()
+    if grade:
+        sistema = [{"type": "text", "text": grade, "cache_control": {"type": "ephemeral"}}, {"type": "text", "text": sistema}]
     try:
         async with asyncio.timeout(TETO_ANTHROPIC):  # a vaga de geração não fica presa além disso
             async with app.state.claude.messages.stream(
@@ -256,6 +336,9 @@ async def pedacos_anthropic(sistema, usuario):
     except TimeoutError:
         log.warning("Anthropic: passou de %s s", TETO_ANTHROPIC)
         raise SemResposta from None
+    u = final.usage
+    log.info("Anthropic: tokens entrada=%s cache_lido=%s cache_criado=%s saida=%s", u.input_tokens,
+             u.cache_read_input_tokens, u.cache_creation_input_tokens, u.output_tokens)
     if final.stop_reason != "end_turn":  # recusa, max_tokens etc.; sem fallback no servidor para o Haiku 5.5
         log.warning("Anthropic: resposta descartada (stop_reason=%s)", final.stop_reason)
         raise SemResposta
@@ -515,9 +598,19 @@ async def expurgar_sempre():
         await asyncio.sleep(24 * 3600)
 
 
+def modelo_do_historico():
+    """Chave de `modelo` no histórico. Com o Claude leva a versão do prompt e um hash da programação: respostas de
+    antes da programação completa (gravadas só com o nome do modelo) ou de uma grade diferente (sala, horário,
+    gravação nova) deixam de casar, sem migrar a coleção. Sem grade, a chave é outra ("sem-grade")."""
+    if not ANTHROPIC_API_KEY:
+        return LLM_MODEL
+    grade = programacao()
+    return f"{LLM_MODEL}+{VERSAO_PROMPT}-{hashlib.sha1(grade.encode()).hexdigest()[:8] if grade else 'sem-grade'}"
+
+
 def filtro_igual(q, idioma):
     """Só reaproveita no mesmo idioma, modelo, índice e palestra (resumo de uma palestra é outra pergunta)."""
-    return (Filter.by_property("idioma").equal(idioma) & Filter.by_property("modelo").equal(LLM_MODEL)
+    return (Filter.by_property("idioma").equal(idioma) & Filter.by_property("modelo").equal(modelo_do_historico())
             & Filter.by_property("versao_indice").equal(versao_indice())
             & Filter.by_property("palestra_id").equal(q.palestra_id or SEM_PALESTRA))
 
@@ -545,7 +638,7 @@ def guardar(q, idioma, vetor, resposta, fontes):
         col.data.delete_by_id(o.uuid)
     col.data.insert(vector=vetor, properties={
         "pergunta": q.pergunta, "idioma": idioma, "resposta": resposta, "fontes": json.dumps(fontes),
-        "modelo": LLM_MODEL, "palestra_id": q.palestra_id or SEM_PALESTRA, "versao_indice": versao_indice(),
+        "modelo": modelo_do_historico(), "palestra_id": q.palestra_id or SEM_PALESTRA, "versao_indice": versao_indice(),
         "criado_em": datetime.now(timezone.utc), "reutilizacoes": vezes})
 
 
@@ -607,7 +700,9 @@ async def passos(q):
     if q.palestra_id and not trechos:  # sem trechos o LLM inventaria um resumo
         raise HTTPException(404, "palestra sem trechos indexados")
     contexto = "\n\n".join(f"[{i}] {cabecalho(t)}\n{t['texto']}" for i, t in enumerate(trechos, 1))
-    prompt = ((RESUMO if q.palestra_id else INSTRUCOES)[idioma], f"Trechos:\n{contexto}\n\nPergunta: {q.pergunta}\n\n{LEMBRETE[idioma]}")
+    com_grade = ANTHROPIC_API_KEY and programacao()  # sem grade, as instruções antigas (que não citam a programação)
+    instrucoes = RESUMO[idioma] if q.palestra_id else INSTRUCOES_ANTHROPIC if com_grade else INSTRUCOES[idioma]
+    prompt = (instrucoes, f"Trechos:\n{contexto}\n\nPergunta: {q.pergunta}\n\n{LEMBRETE[idioma]}")
     # transcrições servem de contexto, mas não são devolvidas: só título, autor e link com tempo
     fontes = [{"n": i, "titulo": t["palestra_titulo"], "palestrantes": t["palestrantes"],
                "links_palestrantes": links(t.get("links_palestrantes")),
@@ -761,6 +856,7 @@ def frequentes(idioma: str = "pt"):
         res = app.state.wv.collections.get("Pergunta").query.fetch_objects(
             limit=30, sort=Sort.by_property("reutilizacoes", ascending=False),
         filters=Filter.by_property("idioma").equal(idioma) & Filter.by_property("versao_indice").equal(versao_indice())
+        & Filter.by_property("modelo").equal(modelo_do_historico())
         & Filter.by_property("palestra_id").equal(SEM_PALESTRA) & Filter.by_property("reutilizacoes").greater_or_equal(2))
     except Exception:
         log.exception("falha ao listar perguntas frequentes")
