@@ -1,7 +1,8 @@
 """Etapa 2: encontra as gravações da Latinoware 2026 no YouTube e baixa só o áudio.
 
 As gravações são lives de dia inteiro, uma por espaço e dia, publicadas pelo canal
-Itaipu Parquetec com títulos "Latinoware 2026 - Espaço <Sala> - DD/10".
+Itaipu Parquetec com títulos "Latinoware 2026 - Espaço <Sala> - DD/10". Um vídeo passado na linha de
+comando pode vir do canal Latinoware, com título "Latinoware 2026   Espaço <Sala>   DD 10".
 
 Saída: data/videos.json (metadados) e data/audio/<id>.m4a.
 Uso: python 02_baixar_audio.py [--so-metadados] [<id de vídeo ou URL de vídeo/playlist> ...]
@@ -17,6 +18,7 @@ import os
 import re
 import subprocess
 import sys
+import unicodedata
 from pathlib import Path
 
 DATA = Path(__file__).parent / "data"
@@ -31,6 +33,8 @@ FONTES = [f"{CANAL}/streams", f"{CANAL}/videos", "ytsearch50:Latinoware 2026 - E
     f"ytsearch50:Latinoware 2026 Espaço {d}/10" for d in (14, 15, 16)] + [
     f"https://www.youtube.com/playlist?list={p}" for p in PLAYLISTS]
 TITULO = re.compile(r"Latinoware 2026 - Espaço (?P<espaco>.+?) - (?P<dia>\d{2})/10")
+# canal Latinoware: "Latinoware 2026   Espaço Brasil   16 10" (sem o hífen e a barra)
+TITULO_NOVO = re.compile(r"Latinoware 2026\s+Espaço\s+(?P<espaco>.+?)\s+(?P<dia>\d{2})\s+10")
 
 
 def cookies():
@@ -53,9 +57,10 @@ def descobrir(extras=()):
             print(f"  {fonte}: {(r.stderr.strip().splitlines() or ['sem resultado'])[-1]}")
         for linha in out.splitlines():
             d = json.loads(linha)
-            m = TITULO.search(d.get("title") or "")  # vídeo privado vem sem título
-            # só vídeos do canal oficial; a busca pode trazer reenvios de terceiros
-            if m and (fonte.startswith(CANAL) or d.get("channel_id") == CANAL_ID):
+            d["title"] = unicodedata.normalize("NFC", d.get("title") or "")  # o canal novo manda o "ç" decomposto
+            m = TITULO.search(d["title"]) or TITULO_NOVO.search(d["title"])  # vídeo privado vem sem título
+            # só vídeos do canal oficial (ou passados na linha de comando); a busca pode trazer reenvios de terceiros
+            if m and (fonte.startswith(CANAL) or fonte in avulsas or d.get("channel_id") == CANAL_ID):
                 videos[d["id"]] = {
                     "id": d["id"],
                     "titulo": d["title"],

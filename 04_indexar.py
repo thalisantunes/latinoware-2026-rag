@@ -99,6 +99,7 @@ def alinhar_palestras(palestras, videos, manual, inicios=True):
     mas só algumas lives transmitiram o áudio; nas outras o trecho é silêncio ou música.
     A grade atrasa: com inicios=True, o instante vem de alinhamento.json ("<uid>": segundos, correção
     manual) ou de data/inicios.json (08_sincronizar_inicio.py, lido da transcrição), quando houver.
+    "<uid>": false em alinhamento.json = atividade sem gravação: sem vídeo nem faixa na transcrição (os trechos do horário ficam "fora da grade").
     """
     alinhadas = {}
     for v in videos:
@@ -110,6 +111,8 @@ def alinhar_palestras(palestras, videos, manual, inicios=True):
         arq = DATA / "transcricoes" / f"{v['id']}.json"
         segs = json.loads(arq.read_text())["segmentos"] if arq.exists() else None
         for p in do_dia:
+            if manual.get(uid(p)) is False:
+                continue
             ini = int((datetime.fromisoformat(p["inicio"]) - t0).total_seconds())
             fim = int((datetime.fromisoformat(p["fim"]) - t0).total_seconds())
             ini, fim = max(ini, 0), min(fim, v["duracao"])  # começou antes da live: vale a parte gravada
@@ -127,7 +130,7 @@ def alinhar_palestras(palestras, videos, manual, inicios=True):
             if lidos.get(u, {}).get("video_id") == a["video_id"]:
                 candidatos.append((lidos[u]["t"], "transcricao"))
             # o primeiro válido vence: manual fora do vídeo não descarta o lido da transcrição
-            t, como = next(((t, c) for t, c in candidatos if isinstance(t, int) and 0 <= t < a["t_fim"]), (None, None))
+            t, como = next(((t, c) for t, c in candidatos if type(t) is int and 0 <= t < a["t_fim"]), (None, None))
             if t is not None:
                 a.update(t_inicio=t, alinhamento=como, url_video=url_video(a["video_id"], t))
     return alinhadas
@@ -172,6 +175,8 @@ def trechos_de_transcricao(palestras, videos, manual, alinhadas=None):
         # anda junto, senão os minutos de atraso iriam para a palestra anterior
         faixas = []
         for p in do_dia if t0 else []:
+            if manual.get(uid(p)) is False:
+                continue
             ini = (datetime.fromisoformat(p["inicio"]) - t0).total_seconds()
             fim = (datetime.fromisoformat(p["fim"]) - t0).total_seconds()
             a = (alinhadas or {}).get(uid(p))
