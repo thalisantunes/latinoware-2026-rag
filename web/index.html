@@ -196,11 +196,11 @@
       enviar: "Perguntar", enviando: "Procurando…", lex: "Exemplos:", langs: "Idioma da interface e da resposta",
       lfaq: "Perguntas frequentes:", reaproveitada: (d) => `Resposta reaproveitada de uma pergunta igual feita em ${d}.`,
       gerarNovo: "Gerar de novo",
-      privPerg: ["As perguntas ficam guardadas sem IP nem identificação por 90 dias, para reaproveitar respostas e melhorar o projeto. Para escrever a resposta, a pergunta e os trechos das palestras usados como fonte são enviados à Anthropic (modelo Claude), sem IP nem dado de identificação. Detalhes em ", "Privacidade", "."],
+      privPerg: ["As perguntas ficam guardadas sem IP nem identificação por 90 dias, para reaproveitar respostas e melhorar o projeto. Para escrever a resposta, a pergunta e os trechos das palestras usados como fonte são enviados à Anthropic (modelo Claude), sem o endereço IP de quem pergunta. Não escreva dados pessoais na pergunta. Detalhes em ", "Privacidade", "."],
       etapa: { reaproveitando: () => "Reaproveitando a resposta de uma pergunta igual…",
         buscando: () => "Buscando nos trechos das palestras (Weaviate, banco vetorial livre)…",
         reordenando: () => "Reordenando os trechos mais relevantes…",
-        escrevendo: (m) => `Escrevendo a resposta com um modelo de linguagem livre${m ? ` (${m})` : ""}…` },
+        escrevendo: (m) => `Escrevendo a resposta com um modelo de linguagem${m ? ` (${m})` : ""}…` },
       fontes: "Fontes", fonte: "Fonte", pronto: "Resposta pronta.",
       vazio: "Nenhum trecho encontrado para essa pergunta. Tente outras palavras ou o nome de um palestrante.",
       erro: "Não foi possível responder agora.", ocupado: "Muitas perguntas ao mesmo tempo. Tente de novo em alguns segundos.",
@@ -228,11 +228,11 @@
       enviar: "Ask", enviando: "Searching…", lex: "Examples:", langs: "Interface and answer language",
       lfaq: "Frequent questions:", reaproveitada: (d) => `Answer reused from an identical question asked on ${d}.`,
       gerarNovo: "Generate again",
-      privPerg: ["Questions are stored without IP or any identification for 90 days, to reuse answers and improve the project. To write the answer, the question and the talk excerpts used as sources are sent to Anthropic (Claude model), with no IP or identifying data. Details at ", "Privacy", "."],
+      privPerg: ["Questions are stored without IP or any identification for 90 days, to reuse answers and improve the project. To write the answer, the question and the talk excerpts used as sources are sent to Anthropic (Claude model), without the IP address of whoever asks. Do not write personal data in the question. Details at ", "Privacy", "."],
       etapa: { reaproveitando: () => "Reusing the answer to an identical question…",
         buscando: () => "Searching the talk excerpts (Weaviate, an open-source vector database)…",
         reordenando: () => "Reranking the most relevant excerpts…",
-        escrevendo: (m) => `Writing the answer with an open language model${m ? ` (${m})` : ""}…` },
+        escrevendo: (m) => `Writing the answer with a language model${m ? ` (${m})` : ""}…` },
       fontes: "Sources", fonte: "Source", pronto: "Answer ready.",
       vazio: "No excerpts found for this question. Try other words or a speaker's name.",
       erro: "Could not answer right now.", ocupado: "Too many questions at once. Try again in a few seconds.",
@@ -260,11 +260,11 @@
       enviar: "Preguntar", enviando: "Buscando…", lex: "Ejemplos:", langs: "Idioma de la interfaz y de la respuesta",
       lfaq: "Preguntas frecuentes:", reaproveitada: (d) => `Respuesta reutilizada de una pregunta igual hecha el ${d}.`,
       gerarNovo: "Generar de nuevo",
-      privPerg: ["Las preguntas se guardan sin IP ni identificación durante 90 días, para reutilizar respuestas y mejorar el proyecto. Para redactar la respuesta, la pregunta y los fragmentos de las charlas usados como fuente se envían a Anthropic (modelo Claude), sin IP ni datos de identificación. Detalles en ", "Privacidad", "."],
+      privPerg: ["Las preguntas se guardan sin IP ni identificación durante 90 días, para reutilizar respuestas y mejorar el proyecto. Para redactar la respuesta, la pregunta y los fragmentos de las charlas usados como fuente se envían a Anthropic (modelo Claude), sin la dirección IP de quien pregunta. No escribas datos personales en la pregunta. Detalles en ", "Privacidad", "."],
       etapa: { reaproveitando: () => "Reutilizando la respuesta de una pregunta igual…",
         buscando: () => "Buscando en los fragmentos de las charlas (Weaviate, base de datos vectorial libre)…",
         reordenando: () => "Reordenando los fragmentos más relevantes…",
-        escrevendo: (m) => `Escribiendo la respuesta con un modelo de lenguaje libre${m ? ` (${m})` : ""}…` },
+        escrevendo: (m) => `Escribiendo la respuesta con un modelo de lenguaje${m ? ` (${m})` : ""}…` },
       fontes: "Fuentes", fonte: "Fuente", pronto: "Respuesta lista.",
       vazio: "No se encontraron fragmentos para esta pregunta. Prueba otras palabras o el nombre de un ponente.",
       erro: "No se pudo responder ahora.", ocupado: "Demasiadas preguntas a la vez. Inténtalo de nuevo en unos segundos.",
@@ -397,7 +397,7 @@
   function mostrar(anuncio, ...nos) { $("anuncio").textContent = anuncio; $("saida").replaceChildren(...nos); }
 
   // etapas conhecidas pelo /health: com reranker há "reordenando" entre a busca e a escrita
-  // a GPU é doméstica: sem API, o aviso aparece e a programação (estática) segue funcionando
+  // sem API, o aviso aparece e a programação (estática) segue funcionando
   let servidor = { modelo: "", reranker: null }, fora = false;
   function saude() {
     fetch(API_URL + "/health", { signal: AbortSignal.timeout(10000) }).then((r) => r.json())
@@ -427,7 +427,7 @@
         }
       }
     } finally {
-      leitor.cancel().catch(() => {});  // break/erro no meio: fecha a conexão e libera a GPU no servidor
+      leitor.cancel().catch(() => {});  // break/erro no meio: fecha a conexão e libera a vaga no servidor
     }
   }
 
