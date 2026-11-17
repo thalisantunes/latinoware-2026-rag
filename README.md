@@ -120,6 +120,9 @@ priority over the other providers), optionally `ANTHROPIC_MODEL` (default `claud
 (default `low`). Keep the key in a file outside the repo, loaded by systemd with `EnvironmentFile=`, never in `.env`.
 **Questions and retrieved chunks are sent to Anthropic.** If Claude refuses, hits the token limit or the API fails,
 the answer falls back to search-only mode (not saved in the history). `data/sem-ia` still wins: run `make com-ia`.
+With Claude, every question also carries the full schedule in compact form (one line per activity, from `web/catalogo.json`, cached
+as a prompt prefix), so overview questions ("list the 10 best talks for X") work; `VERSAO_PROMPT` in `05_api.py` keys the
+answer history, so raise it whenever those instructions change. Local models do not get the schedule.
 
 **Search-only mode** (to free the GPU): `make sem-ia` creates the flag file `data/sem-ia` and unloads the model;
 `make com-ia` removes it. While it exists, `/ask`, `/ask/stream` and the MCP tool answer with the most relevant
@@ -348,6 +351,9 @@ prioridad sobre los otros proveedores) y, si quieres, `ANTHROPIC_MODEL` (por def
 `EnvironmentFile=`, nunca en el `.env`. **Las preguntas y los fragmentos recuperados se envían a Anthropic.** Si Claude
 rechaza la solicitud, alcanza el límite de tokens o la API falla, la respuesta vuelve al modo solo búsqueda (no entra
 en el historial). `data/sem-ia` sigue mandando: ejecuta `make com-ia`.
+Con Claude, cada pregunta lleva además la programación completa en formato compacto (una línea por actividad, de
+`web/catalogo.json`, en caché como prefijo del prompt), para preguntas de panorama ("lista las 10 mejores charlas para X");
+`VERSAO_PROMPT` en `05_api.py` entra en la clave del historial: súbela al cambiar esas instrucciones. Los modelos locales no la reciben.
 
 **Modo solo búsqueda** (para liberar la GPU): `make sem-ia` crea el archivo-bandera `data/sem-ia` y descarga el
 modelo; `make com-ia` lo borra. Mientras exista, `/ask`, `/ask/stream` y la herramienta MCP responden con las charlas
@@ -574,6 +580,9 @@ sobre os outros provedores) e, se quiser, `ANTHROPIC_MODEL` (padrão `claude-hai
 `low`). Deixe a chave em arquivo fora do repo, carregado pelo systemd com `EnvironmentFile=`, nunca no `.env`.
 **Perguntas e trechos recuperados são enviados à Anthropic.** Se o Claude recusar, atingir o limite de tokens ou a API
 falhar, a resposta cai no modo só busca (sem entrar no histórico). `data/sem-ia` continua valendo: rode `make com-ia`.
+Com o Claude, toda pergunta leva também a programação completa em formato compacto (uma linha por atividade, de
+`web/catalogo.json`, em cache como prefixo do prompt), para perguntas de panorama ("liste as 10 melhores palestras para X");
+`VERSAO_PROMPT` em `05_api.py` entra na chave do histórico: suba ao mudar essas instruções. Modelos locais não a recebem.
 
 **Modo só busca** (para liberar a GPU): `make sem-ia` cria o arquivo-flag `data/sem-ia` e descarrega o modelo;
 `make com-ia` apaga. Enquanto ele existir, `/ask`, `/ask/stream` e a ferramenta do MCP respondem com as palestras
