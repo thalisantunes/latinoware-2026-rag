@@ -5,7 +5,8 @@ Fluxo: embute a pergunta (bge-m3) -> busca híbrida (BM25 + vetor) na coleção 
 monta contexto numerado -> LLM responde no idioma da pergunta, citando [n].
 
 LLM: Ollama local (LLM_MODEL, padrão gemma4:12b-it-qat). Com LLM_API_KEY definida, usa um provedor
-externo compatível com a API OpenAI (LLM_BASE_URL + LLM_MODEL).
+externo compatível com a API OpenAI (LLM_BASE_URL + LLM_MODEL). Com ANTHROPIC_API_KEY definida (tem prioridade),
+usa o Claude pela API da Anthropic (ANTHROPIC_MODEL, ANTHROPIC_EFFORT).
 """
 
 import asyncio
@@ -42,6 +43,11 @@ GERACAO = (os.environ.get("OLLAMA_GERACAO_URL") or OLLAMA).rstrip("/")
 LLM_KEEP_ALIVE = os.environ.get("LLM_KEEP_ALIVE", "")  # vazio = o padrão do Ollama; ex.: 10m descarrega o modelo parado
 LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "https://api.openai.com/v1")
 LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")  # o SDK lê a mesma variável; aqui só liga o provedor
+ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-haiku-5-5")
+ANTHROPIC_EFFORT = os.environ.get("ANTHROPIC_EFFORT", "low")
+if ANTHROPIC_API_KEY:
+    LLM_MODEL = ANTHROPIC_MODEL  # /health, o histórico e a etapa "escrevendo" mostram o modelo em uso
 ALPHA = float(os.environ.get("HYBRID_ALPHA", 0.75))  # 0 = só BM25, 1 = só vetor
 # reranker opcional (bge-reranker-v2-m3): na GPU desta máquina (RERANK_LOCAL, modelo do Hugging Face;
 # precisa de `uv sync --extra rerank`) ou num serviço no formato Jina/Cohere (RERANK_URL)
@@ -81,6 +87,9 @@ def versao_indice():
         return ARQ_VERSAO.read_text().strip() if ARQ_VERSAO.exists() else "0"
 CORS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "https://ilove.the.br,https://www.ilove.the.br,https://rede-cidades.pages.dev,https://latinoware.org,https://www.latinoware.org,http://localhost:8765").split(",")]
 MAX_TOKENS = int(os.environ.get("LLM_MAX_TOKENS", 800))
+# no Claude o raciocínio (thinking adaptativo) conta no max_tokens: a folga evita cortar a resposta antes do texto
+MAX_TOKENS_ANTHROPIC = MAX_TOKENS + 3200
+TETO_ANTHROPIC = 45  # segundos para a geração inteira; a página desiste em 90
 # sem limite, uma palestra longa e bem transcrita ocupava 7 das 8 fontes
 MAX_POR_PALESTRA = int(os.environ.get("MAX_POR_PALESTRA", 2))
 # a GPU atende poucas gerações por vez; acima disso a API responde 429 em vez de enfileirar
@@ -174,6 +183,8 @@ async def lifespan(app):
     yield
     app.state.expurgo.cancel()
     app.state.wv.close()
+    if claude := getattr(app.state, "claude", None):
+        await claude.close()
     await app.state.http.aclose()
 
 
@@ -192,7 +203,7 @@ async def geracao_disponivel():
     """False no modo só busca (arquivo-flag) ou com OLLAMA_GERACAO_URL fora do ar (sondagem de 2 s, vale por 15 s)."""
     if SEM_IA.exists():
         return False
-    if LLM_API_KEY or GERACAO == OLLAMA:
+    if ANTHROPIC_API_KEY or LLM_API_KEY or GERACAO == OLLAMA:
         return True
     agora = time.monotonic()
     if agora >= _geracao["ate"]:
@@ -208,8 +219,54 @@ def so_busca(idioma, fontes):
     return {"resposta": AVISO_SEM_IA[idioma], "idioma": idioma, "fontes": fontes, "reaproveitada": False, "sem_ia": True}
 
 
+class SemResposta(Exception):
+    """O Claude não entregou a resposta (recusa, limite de tokens, erro da API): a API cai no modo só busca."""
+
+
+async def pedacos_anthropic(sistema, usuario):
+    import anthropic  # import tardio: sem ANTHROPIC_API_KEY, a API sobe mesmo sem o pacote instalado
+    import httpx2  # o SDK 2.x usa httpx2; falha de transporte no meio do stream sobe crua, sem virar APIConnectionError
+    if not hasattr(app.state, "claude"):
+        # 1 nova tentativa (padrão: 2); o teto total de TETO_ANTHROPIC abaixo cobre tentativas e espera, e cabe nos 90 s da página
+        app.state.claude = anthropic.AsyncAnthropic(timeout=60, max_retries=1)
+    try:
+        async with asyncio.timeout(TETO_ANTHROPIC):  # a vaga de geração não fica presa além disso
+            async with app.state.claude.messages.stream(
+                    model=ANTHROPIC_MODEL, max_tokens=MAX_TOKENS_ANTHROPIC, system=sistema,
+                    messages=[{"role": "user", "content": usuario}], output_config={"effort": ANTHROPIC_EFFORT}) as fluxo:
+                async for p in fluxo.text_stream:
+                    yield p
+                final = await fluxo.get_final_message()
+    except (anthropic.AuthenticationError, anthropic.PermissionDeniedError, anthropic.NotFoundError,
+            anthropic.BadRequestError) as e:  # chave, modelo ou parâmetro errado: precisa de gente
+        log.error("Anthropic recusou a requisição (%s, HTTP %s)", type(e).__name__, e.status_code)
+        raise SemResposta from None
+    except anthropic.RateLimitError:
+        log.warning("Anthropic: limite de uso (429)")
+        raise SemResposta from None
+    except anthropic.APIStatusError as e:  # 5xx e 529 (sobrecarga), depois das tentativas do SDK
+        log.warning("Anthropic: erro da API (HTTP %s)", e.status_code)
+        raise SemResposta from None
+    except anthropic.APIConnectionError as e:  # inclui o tempo esgotado de uma fase
+        log.warning("Anthropic: sem conexão (%s)", type(e).__name__)
+        raise SemResposta from None
+    except httpx2.TransportError as e:  # queda depois do primeiro byte
+        log.warning("Anthropic: conexão caiu no meio da resposta (%s)", type(e).__name__)
+        raise SemResposta from None
+    except TimeoutError:
+        log.warning("Anthropic: passou de %s s", TETO_ANTHROPIC)
+        raise SemResposta from None
+    if final.stop_reason != "end_turn":  # recusa, max_tokens etc.; sem fallback no servidor para o Haiku 5.5
+        log.warning("Anthropic: resposta descartada (stop_reason=%s)", final.stop_reason)
+        raise SemResposta
+
+
 async def pedacos(sistema, usuario):
     """Texto da resposta em pedaços, à medida que o LLM gera."""
+    if ANTHROPIC_API_KEY:
+        async for p in pedacos_anthropic(sistema, usuario):
+            yield p
+        return
     mensagens = [{"role": "system", "content": sistema}, {"role": "user", "content": usuario}]
     if LLM_API_KEY:
         async with app.state.http.stream("POST", f"{LLM_BASE_URL}/chat/completions",
@@ -578,6 +635,8 @@ async def responder(q):
         return so_busca(idioma, fontes)
     try:
         resposta = limpar(await gerar(*prompt))
+    except SemResposta:  # não entra no histórico
+        return so_busca(idioma, fontes)
     except Exception:
         log.exception("falha no LLM")
         raise HTTPException(503, "gerador de respostas indisponível") from None
@@ -652,6 +711,10 @@ async def ask_stream(q: Pergunta):
                     if p:
                         resposta.append(p)
                         yield sse("token", {"t": p})
+            except SemResposta:  # o texto já enviado é trocado pelo aviso no evento fim; não entra no histórico
+                m.update(status=200, sem_ia=True)
+                yield sse("fim", so_busca(idioma, fontes))
+                return
             except Exception:
                 log.exception("falha no LLM")
                 m["status"] = 503
@@ -724,7 +787,7 @@ def health():
         except httpx.HTTPError:
             return False
     embed_ok = vivo(OLLAMA)
-    llm = bool(LLM_API_KEY) or (embed_ok if GERACAO == OLLAMA else vivo(GERACAO))
+    llm = bool(ANTHROPIC_API_KEY or LLM_API_KEY) or (embed_ok if GERACAO == OLLAMA else vivo(GERACAO))
     sem_ia = SEM_IA.exists() or not llm
     wv = app.state.wv.is_ready()
     return {"ok": wv and embed_ok, "weaviate": wv, "llm": llm, "sem_ia": sem_ia, "modelo": LLM_MODEL, "reranker": (RERANK_LOCAL if _reranker is not False else None) or (RERANK_MODEL if RERANK_URL else None)}

@@ -113,6 +113,12 @@ To use an external OpenAI-compatible provider instead of Ollama, set `LLM_API_KE
 **questions and retrieved chunks are sent to the provider**. `make` reads `.env`; running the
 scripts directly, use `uv run --env-file .env python 05_api.py`.
 
+To generate with Claude through the Anthropic API (official `anthropic` SDK), set `ANTHROPIC_API_KEY` (it takes
+priority over the other providers), optionally `ANTHROPIC_MODEL` (default `claude-haiku-5-5`) and `ANTHROPIC_EFFORT`
+(default `low`). Keep the key in a file outside the repo, loaded by systemd with `EnvironmentFile=`, never in `.env`.
+**Questions and retrieved chunks are sent to Anthropic.** If Claude refuses, hits the token limit or the API fails,
+the answer falls back to search-only mode (not saved in the history). `data/sem-ia` still wins: run `make com-ia`.
+
 **Search-only mode** (to free the GPU): `make sem-ia` creates the flag file `data/sem-ia` and unloads the model;
 `make com-ia` removes it. While it exists, `/ask`, `/ask/stream` and the MCP tool answer with the most relevant
 talks and the `?t=` video links, no generated text (`"sem_ia": true`, and `resposta` holds the notice "AI summary
@@ -332,6 +338,13 @@ Para usar un proveedor externo compatible con la API de OpenAI en lugar de Ollam
 En ese modo **las preguntas y los fragmentos recuperados se envían al proveedor**. `make` lee el
 `.env`; corriendo los scripts directamente, usa `uv run --env-file .env python 05_api.py`.
 
+Para generar con Claude mediante la API de Anthropic (SDK oficial `anthropic`), define `ANTHROPIC_API_KEY` (tiene
+prioridad sobre los otros proveedores) y, si quieres, `ANTHROPIC_MODEL` (por defecto `claude-haiku-5-5`) y
+`ANTHROPIC_EFFORT` (por defecto `low`). Guarda la clave en un archivo fuera del repositorio, cargado por systemd con
+`EnvironmentFile=`, nunca en el `.env`. **Las preguntas y los fragmentos recuperados se envían a Anthropic.** Si Claude
+rechaza la solicitud, alcanza el límite de tokens o la API falla, la respuesta vuelve al modo solo búsqueda (no entra
+en el historial). `data/sem-ia` sigue mandando: ejecuta `make com-ia`.
+
 **Modo solo búsqueda** (para liberar la GPU): `make sem-ia` crea el archivo-bandera `data/sem-ia` y descarga el
 modelo; `make com-ia` lo borra. Mientras exista, `/ask`, `/ask/stream` y la herramienta MCP responden con las charlas
 más relevantes y los enlaces `?t=` al video, sin texto generado (`"sem_ia": true`; `resposta` trae el aviso "Resumen
@@ -549,6 +562,12 @@ Para usar um provedor externo compatível com a API OpenAI em vez do Ollama, def
 `LLM_API_KEY`, `LLM_BASE_URL` e `LLM_MODEL` no `.env`, sem aspas (nunca commite o `.env`).
 Nesse modo, **as perguntas e os trechos recuperados são enviados ao provedor**. O `.env` é lido
 pelo `make`; rodando os scripts direto, use `uv run --env-file .env python 05_api.py`.
+
+Para gerar com o Claude pela API da Anthropic (SDK oficial `anthropic`), defina `ANTHROPIC_API_KEY` (tem prioridade
+sobre os outros provedores) e, se quiser, `ANTHROPIC_MODEL` (padrão `claude-haiku-5-5`) e `ANTHROPIC_EFFORT` (padrão
+`low`). Deixe a chave em arquivo fora do repo, carregado pelo systemd com `EnvironmentFile=`, nunca no `.env`.
+**Perguntas e trechos recuperados são enviados à Anthropic.** Se o Claude recusar, atingir o limite de tokens ou a API
+falhar, a resposta cai no modo só busca (sem entrar no histórico). `data/sem-ia` continua valendo: rode `make com-ia`.
 
 **Modo só busca** (para liberar a GPU): `make sem-ia` cria o arquivo-flag `data/sem-ia` e descarrega o modelo;
 `make com-ia` apaga. Enquanto ele existir, `/ask`, `/ask/stream` e a ferramenta do MCP respondem com as palestras

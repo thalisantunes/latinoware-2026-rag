@@ -413,3 +413,221 @@ def test_so_busca_nao_chama_o_llm(tmp_path, monkeypatch):
     monkeypatch.setattr(api, "lembrar", lembrar)
     r = asyncio.run(api.responder(api.Pergunta(pergunta="Who talked about Linux?")))
     assert r["sem_ia"] and r["fontes"] == fontes and r["resposta"] == api.AVISO_SEM_IA["en"]
+
+
+class FluxoClaude:
+    """Cliente simulado do SDK da Anthropic (sem rede): messages.stream(...) como context manager assíncrono."""
+
+    def __init__(self, textos=(), stop_reason="end_turn", erro=None):
+        self.textos, self.stop_reason, self.erro, self.chamadas = textos, stop_reason, erro, []
+        self.messages = self
+
+    def stream(self, **kw):
+        self.chamadas.append(kw)
+        return self
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_):
+        return False
+
+    @property
+    def text_stream(self):
+        async def gera():
+            for t in self.textos:
+                yield t
+            if self.erro:
+                raise self.erro
+        return gera()
+
+    async def get_final_message(self):
+        class Final:
+            stop_reason = self.stop_reason
+        return Final
+
+
+def claude_ligado(monkeypatch, fluxo):
+    monkeypatch.setattr(api, "ANTHROPIC_API_KEY", "chave-de-teste")
+    monkeypatch.setattr(api, "SEM_IA", Path("/nonexistent/sem-ia"))
+    monkeypatch.setattr(api.app.state, "claude", fluxo, raising=False)
+
+
+def erro_anthropic(classe, status=None):
+    import anthropic
+    import httpx2
+    pedido = httpx2.Request("POST", "http://api.invalid/v1/messages")
+    if status is None:
+        return classe(request=pedido)
+    return classe("falha simulada", response=httpx2.Response(status, request=pedido), body=None)
+
+
+def test_anthropic_entrega_o_texto(monkeypatch):
+    fluxo = FluxoClaude(["Olá", ", mundo [1]."])
+    claude_ligado(monkeypatch, fluxo)
+    assert asyncio.run(api.gerar("sistema", "usuario")) == "Olá, mundo [1]."
+    kw = fluxo.chamadas[0]
+    assert kw["model"] == api.ANTHROPIC_MODEL and kw["system"] == "sistema"
+    assert kw["messages"] == [{"role": "user", "content": "usuario"}]
+    assert kw["output_config"] == {"effort": api.ANTHROPIC_EFFORT}
+    assert kw["max_tokens"] > api.MAX_TOKENS  # folga para o thinking
+    assert not {"temperature", "top_p", "top_k", "thinking"} & kw.keys()
+
+
+def degradacao(monkeypatch, fluxo):
+    fontes = [{"n": 1, "titulo": "Palestra", "url_video": None}]
+
+    async def preparar(q):
+        return "pronto", ("pt", ("sistema", "usuario"), fontes, None)
+
+    async def lembrar(*_):
+        raise AssertionError("a degradação não entra no histórico")
+
+    claude_ligado(monkeypatch, fluxo)
+    monkeypatch.setattr(api, "preparar", preparar)
+    monkeypatch.setattr(api, "lembrar", lembrar)
+    return fontes
+
+
+def casos_de_falha():
+    import anthropic
+    import httpx2
+    return [
+        FluxoClaude(["parcial"], stop_reason="refusal"),
+        FluxoClaude(["cortada"], stop_reason="max_tokens"),
+        FluxoClaude(erro=erro_anthropic(anthropic.RateLimitError, 429)),
+        FluxoClaude(erro=erro_anthropic(anthropic.AuthenticationError, 401)),
+        FluxoClaude(erro=erro_anthropic(anthropic.APIStatusError, 529)),
+        FluxoClaude(erro=erro_anthropic(anthropic.APIConnectionError)),
+        FluxoClaude(["parcial"], stop_reason="pause_turn"),
+        FluxoClaude(["a", "b", "c"], erro=httpx2.ReadError("queda depois do primeiro byte")),
+    ]
+
+
+@pytest.mark.parametrize("indice", range(8))
+def test_anthropic_falha_vira_so_busca(monkeypatch, indice):
+    fontes = degradacao(monkeypatch, casos_de_falha()[indice])
+    r = asyncio.run(api.responder(api.Pergunta(pergunta="Quem falou de Linux?")))
+    assert r["sem_ia"] and r["fontes"] == fontes and r["resposta"] == api.AVISO_SEM_IA["pt"]
+
+
+def test_anthropic_falha_no_stream_manda_fim_so_busca(monkeypatch):
+    fontes = degradacao(monkeypatch, FluxoClaude(["parcial"], stop_reason="refusal"))
+
+    async def nao_respondida(q):
+        return None
+
+    async def passos(q):
+        yield "pronto", ("pt", ("sistema", "usuario"), fontes, None)
+
+    monkeypatch.setattr(api, "ja_respondida", nao_respondida)
+    monkeypatch.setattr(api, "passos", passos)
+    monkeypatch.setattr(api, "registrar", lambda *a, **k: None)
+
+    async def corpo():
+        resp = await api.ask_stream(api.Pergunta(pergunta="Quem falou de Linux?"))
+        return "".join([c async for c in resp.body_iterator])
+
+    texto = asyncio.run(corpo())
+    assert "event: token" in texto and "event: erro" not in texto
+    assert texto.rstrip().rsplit("event: fim", 1)[1].count('"sem_ia": true') == 1
+
+
+def test_sem_chave_anthropic_nada_muda(monkeypatch):
+    class Alcancado(Exception):
+        pass
+
+    class Http:  # o caminho do Ollama/OpenAI é o que roda, não o da Anthropic
+        def stream(self, *a, **k):
+            raise Alcancado
+
+    def nunca(*_):
+        raise AssertionError("sem ANTHROPIC_API_KEY não pode usar o provedor da Anthropic")
+
+    monkeypatch.setattr(api, "ANTHROPIC_API_KEY", "")
+    monkeypatch.setattr(api, "LLM_API_KEY", "")
+    monkeypatch.setattr(api, "pedacos_anthropic", nunca)
+    monkeypatch.setattr(api.app.state, "http", Http(), raising=False)
+    with pytest.raises(Alcancado):
+        asyncio.run(api.gerar("sistema", "usuario"))
+
+
+def test_anthropic_teto_de_tempo_vira_so_busca(monkeypatch):
+    class Lento(FluxoClaude):
+        @property
+        def text_stream(self):
+            async def gera():
+                yield "começo"
+                await asyncio.sleep(5)
+            return gera()
+
+    fontes = degradacao(monkeypatch, Lento())
+    monkeypatch.setattr(api, "TETO_ANTHROPIC", 0.05)
+    r = asyncio.run(api.responder(api.Pergunta(pergunta="Quem falou de Linux?")))
+    assert r["sem_ia"] and r["fontes"] == fontes
+
+
+def sse_claude(texto, stop_reason="end_turn"):
+    def ev(nome, dados):
+        return f"event: {nome}\ndata: {json.dumps({'type': nome, **dados})}\n\n"
+    msg = {"id": "msg_1", "type": "message", "role": "assistant", "model": "m", "content": [],
+           "stop_reason": None, "stop_sequence": None, "usage": {"input_tokens": 1, "output_tokens": 1}}
+    return (ev("message_start", {"message": msg})
+            + ev("content_block_start", {"index": 0, "content_block": {"type": "text", "text": ""}})
+            + ev("content_block_delta", {"index": 0, "delta": {"type": "text_delta", "text": texto}})
+            + ev("content_block_stop", {"index": 0})
+            + ev("message_delta", {"delta": {"stop_reason": stop_reason, "stop_sequence": None}, "usage": {"output_tokens": 2}})
+            + ev("message_stop", {})).encode()
+
+
+def test_anthropic_corpo_da_requisicao_com_sdk_real(monkeypatch):
+    import anthropic
+    import httpx2
+    visto = []
+
+    def atende(req):
+        visto.append(json.loads(req.content))
+        return httpx2.Response(200, headers={"content-type": "text/event-stream"}, content=sse_claude("Resposta [1]."))
+
+    cliente = anthropic.AsyncAnthropic(api_key="chave-de-teste", max_retries=0,
+                                       http_client=anthropic.DefaultAsyncHttpxClient(transport=httpx2.MockTransport(atende)))
+    claude_ligado(monkeypatch, cliente)
+    assert asyncio.run(api.gerar("sistema", "usuario")) == "Resposta [1]."
+    corpo = visto[0]
+    assert corpo["model"] == api.ANTHROPIC_MODEL and corpo["system"] == "sistema" and corpo["stream"] is True
+    assert corpo["output_config"] == {"effort": api.ANTHROPIC_EFFORT}
+    assert corpo["max_tokens"] == api.MAX_TOKENS_ANTHROPIC > api.MAX_TOKENS
+    assert corpo["messages"] == [{"role": "user", "content": "usuario"}]
+    assert not {"temperature", "top_p", "top_k", "thinking"} & corpo.keys()
+
+
+def test_health_com_anthropic(monkeypatch):
+    class Wv:
+        def is_ready(self):
+            return True
+
+    def get(url, **k):  # só o Ollama local (embedding) responde; o remoto de geração está fora do ar
+        class R:
+            is_success = url.startswith(api.OLLAMA)
+        return R
+
+    monkeypatch.setattr(api.httpx, "get", get)
+    monkeypatch.setattr(api.app.state, "wv", Wv(), raising=False)
+    monkeypatch.setattr(api, "SEM_IA", Path("/nonexistent/sem-ia"))
+    monkeypatch.setattr(api, "GERACAO", "http://127.0.0.1:9")
+    monkeypatch.setattr(api, "LLM_API_KEY", "")
+    monkeypatch.setattr(api, "ANTHROPIC_API_KEY", "")
+    h = api.health()
+    assert not h["llm"] and h["sem_ia"]  # sem a chave, o remoto fora do ar derruba a geração
+    monkeypatch.setattr(api, "ANTHROPIC_API_KEY", "chave-de-teste")
+    h = api.health()
+    assert h["llm"] and not h["sem_ia"]
+
+
+def test_modelo_segue_o_provedor(monkeypatch):
+    monkeypatch.setenv("LLM_MODEL", "local-teste")
+    monkeypatch.setenv("ANTHROPIC_MODEL", "claude-teste")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+    assert modulo("05_api.py").LLM_MODEL == "local-teste"
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "chave-de-teste")
+    assert modulo("05_api.py").LLM_MODEL == "claude-teste"
