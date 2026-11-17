@@ -4,6 +4,7 @@ Precisa do Playwright e do Chromium dele (make testar já traz o pacote; o naveg
 playwright install chromium); sem o navegador instalado, os testes são pulados.
 """
 
+import json
 from pathlib import Path
 
 import pytest
@@ -53,7 +54,7 @@ def navegador():
         b.close()
 
 
-def abrir(navegador, caminho="/", idioma="pt", voz=VOZ_FALSA, embed_attr="", resposta=RESPOSTA):
+def abrir(navegador, caminho="/", idioma="pt", voz=VOZ_FALSA, embed_attr="", resposta=RESPOSTA, fontes=FONTES, sem_ia=False, stream=None):
     pagina = navegador.new_page()
     pagina.add_init_script(voz)
 
@@ -66,9 +67,11 @@ def abrir(navegador, caminho="/", idioma="pt", voz=VOZ_FALSA, embed_attr="", res
         if nome == "/frequentes":
             return rota.fulfill(json=[])
         if nome == "/ask/stream":
-            return rota.fulfill(status=404, body="")
+            if stream is None:
+                return rota.fulfill(status=404, body="")
+            return rota.fulfill(body=stream, content_type="text/event-stream")
         if nome == "/ask":
-            return rota.fulfill(json={"resposta": resposta, "idioma": idioma, "fontes": FONTES})
+            return rota.fulfill(json={"resposta": resposta, "idioma": idioma, "fontes": fontes} | ({"sem_ia": True} if sem_ia else {}))
         arquivo = WEB / (nome.strip("/") or "index.html")
         if not arquivo.is_file():
             return rota.fulfill(status=404, body="")
@@ -221,3 +224,100 @@ def test_resumo_com_ia_no_componente(navegador):
     pagina.get_by_role("button", name="Escuchar resumen").click()
     assert falas(pagina) == [{"text": FRASES[0], "lang": "es", "rate": 1}]
     pagina.close()
+
+
+URL = "https://youtu.be/0WgTllmf2B4?t=11300"
+FONTES3 = FONTES + [{"n": 3, "fonte": "resumo", "titulo": "Outra", "url": "https://latinoware.org/c", "inicio": "2026-10-14T12:00"}]
+
+
+def numeros_no_painel(pagina):
+    return pagina.eval_on_selector_all(".fontes .chip[id^=fonte-]", "els => els.map(e => e.id)")
+
+
+def test_painel_so_com_fontes_citadas_e_numeracao_original(navegador):
+    pagina = abrir(navegador, resposta="Veja [2]. Fim.", fontes=FONTES3)
+    perguntar(pagina)
+    assert numeros_no_painel(pagina) == ["fonte-2"]
+    assert pagina.locator(".fontes .chip b").all_inner_texts() == ["[2]"]
+
+
+def test_painel_some_sem_citacao_e_so_busca_mostra_tudo(navegador):
+    pagina = abrir(navegador, resposta="Sem citar nada.", fontes=FONTES3)
+    perguntar(pagina)
+    assert pagina.locator("#saida h2").count() == 0 and pagina.locator(".fontes").count() == 0
+    pagina = abrir(navegador, resposta="Aviso sem citações.", fontes=FONTES3, sem_ia=True)
+    pagina.fill("#q", "pergunta")
+    pagina.click("#b")
+    pagina.wait_for_selector(".fontes")
+    assert numeros_no_painel(pagina) == ["fonte-1", "fonte-2", "fonte-3"]
+
+
+def test_painel_no_stream_so_aparece_no_fim_e_filtrado(navegador):
+    def ev(nome, dados):
+        return f"event: {nome}\ndata: {json.dumps(dados)}\n\n"
+    corpo = (ev("etapa", {"etapa": "buscando"}) + ev("fontes", {"fontes": FONTES3, "idioma": "pt"}) + ev("token", {"t": "Veja [3]."})
+             + ev("fim", {"resposta": "Veja [3].", "idioma": "pt", "reaproveitada": False}))
+    pagina = abrir(navegador, stream=corpo)
+    perguntar(pagina)
+    assert numeros_no_painel(pagina) == ["fonte-3"]
+
+
+def test_url_de_gravacao_vira_link_e_o_ouvir_nao_a_le(navegador):
+    texto = f"Assista em {URL}. Também https://evil.example/x e <b>html</b> [1]."
+    pagina = abrir(navegador, resposta=texto, fontes=FONTES)
+    perguntar(pagina)
+    links = pagina.locator(".resposta a:not(.cit)")
+    assert links.count() == 1 and links.get_attribute("href") == URL and links.inner_text() == URL
+    assert links.get_attribute("target") == "_blank" and "noopener" in links.get_attribute("rel")
+    resposta = pagina.locator(".resposta").inner_text()
+    assert "https://evil.example/x" in resposta and "<b>html</b>" in resposta  # texto puro, sem link nem HTML
+    assert pagina.locator(".resposta b").count() == 0 and pagina.locator(".resposta a[href*=evil]").count() == 0
+    pagina.get_by_role("button", name="Ouvir resposta").click()
+    assert "youtu" not in falas(pagina)[0]["text"] and "link na página" in falas(pagina)[0]["text"]
+
+
+@pytest.mark.parametrize("citacao", ["[1-3]", "[1–3]", "[1, 2 e 3]", "[1, 2 and 3]", "[1, 2 y 3]"])
+def test_painel_e_links_entendem_intervalo_e_e(navegador, citacao):
+    pagina = abrir(navegador, resposta=f"Veja {citacao}.", fontes=FONTES3)
+    perguntar(pagina)
+    assert numeros_no_painel(pagina) == ["fonte-1", "fonte-2", "fonte-3"]
+    assert pagina.locator(".resposta a.cit").all_inner_texts() == ["1", "2", "3"]
+
+
+def test_citacao_nao_entendida_mostra_todas_as_fontes(navegador):
+    pagina = abrir(navegador, resposta="Veja [1 a 3] e [2].", fontes=FONTES3)
+    perguntar(pagina)
+    assert numeros_no_painel(pagina) == ["fonte-1", "fonte-2", "fonte-3"]  # rede de segurança: nunca nenhuma por engano
+
+
+def test_grupo_misto_liga_so_os_numeros_validos(navegador):
+    pagina = abrir(navegador, resposta="Veja [2, 9].", fontes=FONTES3)
+    perguntar(pagina)
+    assert numeros_no_painel(pagina) == ["fonte-2"] and pagina.locator(".resposta a.cit").all_inner_texts() == ["2"]
+
+
+def test_url_sem_lixo_no_href_e_ouvir_mantem_a_pontuacao(navegador):
+    texto = f"Veja **{URL}** e ({URL}), ou “{URL}”, depois `{URL}`. Fim {URL}."
+    pagina = abrir(navegador, resposta=texto)
+    perguntar(pagina)
+    hrefs = pagina.eval_on_selector_all(".resposta a:not(.cit)", "els => els.map(e => e.getAttribute('href'))")
+    assert hrefs == [URL] * 5
+    pagina.get_by_role("button", name="Ouvir resposta").click()
+    assert falas(pagina)[0]["text"] == "Veja **link na página** e (link na página), ou “link na página”, depois `link na página`."
+
+
+def test_ouvir_preserva_ponto_depois_da_url(navegador):
+    pagina = abrir(navegador, resposta=f"Assista em {URL}. Fim.")
+    perguntar(pagina)
+    pagina.get_by_role("button", name="Ouvir resposta").click()
+    assert falas(pagina)[0]["text"] == "Assista em link na página."
+
+
+def test_copiar_sem_fontes_exibidas_nao_leva_bloco_vazio(navegador):
+    pagina = abrir(navegador, resposta="Sem citar nada.", fontes=FONTES3)
+    perguntar(pagina)
+    pagina.evaluate("window.__copiado = null; Object.defineProperty(navigator, 'clipboard', { value: { writeText: (t) => { window.__copiado = t; return Promise.resolve(); } }, configurable: true })")
+    pagina.get_by_role("button", name="Copiar resposta").click()
+    pagina.wait_for_function("window.__copiado !== null")
+    copiado = pagina.evaluate("window.__copiado")
+    assert copiado.endswith("Sem citar nada.") and "Fontes" not in copiado
